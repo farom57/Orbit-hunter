@@ -22,10 +22,14 @@ class Configuration(object):
         self.observer_alt = 5
         self.observer_lat = "43.538 N"
         self.observer_lon = "6.955 E"
+        self.observer_offset = 0 # in minutes
 
-        self.selected_satellite = "ISS (ZARYA)"
+        self.track_method = "Speed"
 
-        self.p_gain = 1
-        self.i_gain = 0
+        self.p_gain = 0.5
+        self.tau_i = 3
+        self.tau_d = 1
+        self.max_rate = 200
+        self.i_sat = 0.5
 
 
