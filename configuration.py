@@ -16,8 +16,16 @@ class Configuration(object):
         self.indi_joystick_driver = ""
 
         self.satellites_url = "http://celestrak.com/NORAD/elements/stations.txt"
-        self.selected_satellite = "ISS (ZARYA)"
+        self.selected_satellite = 'ISS (ZARYA)'
         self.satellites_tle = load.tle(self.satellites_url)
+
+
+        ts = load.timescale()
+        t = ts.now()
+        days = t - self.satellites_tle[self.selected_satellite].epoch
+        print('{:.3f} days away from epoch'.format(days))
+        if abs(days) > 14:
+            self.satellites_tle = load.tle(self.satellites_url, reload=True)
 
         self.observer_alt = 5
         self.observer_lat = "43.538 N"

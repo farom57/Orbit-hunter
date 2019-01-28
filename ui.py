@@ -7,7 +7,9 @@ from tracker import *
 
 from tkinter import *
 from tkinter.ttk import *
-from skyfield.api import load
+from tkinter.messagebox import showinfo
+from skyfield.api import load, Topos
+from threading import Timer
 import Pmw
 
 class UI(object):
@@ -44,7 +46,7 @@ class UI(object):
 
         self.indi_connect_var = StringVar()
         self.indi_connect_var.set("Connect")
-        self.indi_connect = Button(self.indi_frame, textvariable=self.indi_connect_var)
+        self.indi_connect = Button(self.indi_frame, textvariable=self.indi_connect_var,  command=self.indi_connect_cmd)
 
         self.indi_telescope_row = Frame(self.indi_frame)
         self.indi_telescope_lbl = Label(self.indi_telescope_row,  text="Telescope:")
@@ -53,7 +55,7 @@ class UI(object):
         self.indi_telescope_var.set(self.indi_telescope_options[0])
         self.indi_telescope = OptionMenu(self.indi_telescope_row, self.indi_telescope_var, *self.indi_telescope_options)
         self.indi_telescope .config(width = 12)
-        self.indi_telescope_cfg = Button(self.indi_telescope_row, text="Config",  width = 6)
+        self.indi_telescope_cfg = Button(self.indi_telescope_row, text="Config",  width = 6, command=self.indi_telescope_cfg_cmd)
 
         self.indi_joystick_row = Frame(self.indi_frame)
         self.indi_joystick_lbl = Label(self.indi_joystick_row,  text="Joystick:")
@@ -62,7 +64,7 @@ class UI(object):
         self.indi_joystick_var.set(self.indi_joystick_options[0])
         self.indi_joystick = OptionMenu(self.indi_joystick_row, self.indi_joystick_var, *self.indi_joystick_options)
         self.indi_joystick.config(width = 12)
-        self.indi_joystick_cfg = Button(self.indi_joystick_row, text="Config",  width = 6)
+        self.indi_joystick_cfg = Button(self.indi_joystick_row, text="Config",  width = 6, command=self.indi_joystick_cfg_cmd)
 
         self.indi_status_var = StringVar()
         self.indi_status_var.set("Not connected")
@@ -96,9 +98,10 @@ class UI(object):
         '''self.sat_list_var = StringVar()
         self.sat_list_var.set(self.sat_list_options[0])
         self.sat_list = OptionMenu(self.sat_list_row, self.indi_joystick_var, *self.sat_list_options)'''
-        self.sat_list = Pmw.ComboBox(self.sat_list_row,scrolledlist_items = self.sat_list_options,listheight = 150)
+        self.sat_list = Pmw.ComboBox(self.sat_list_row,scrolledlist_items = self.sat_list_options,listheight = 150, history=0, selectioncommand = self.sat_changed)
         self.sat_list.config(width = 20)
-        self.sat_list_cat = Button(self.sat_list_row, text="Catalogs", width = 6)
+        self.sat_list.selectitem(self.conf.selected_satellite)
+        self.sat_list_cat = Button(self.sat_list_row, text="Catalogs", width = 6, command=self.sat_list_cat_cmd)
 
         self.sat_TLE_lbl = Label(self.sat_frame,  text="TLE:")
         self.sat_TLE_txt = Text(self.sat_frame,  height=2,  width=69)
@@ -118,29 +121,35 @@ class UI(object):
 
 # Observer
         self.obs_frame = LabelFrame(self.main_frame, text="Observer")
+        self.obs_loc_str = StringVar()
+
         self.obs_lat_row = Frame(self.obs_frame)
         self.obs_lat_label = Label(self.obs_lat_row, text="Latitude: ")
         self.obs_lat_var = StringVar()
         self.obs_lat_var.set(self.conf.observer_lat)
-        self.obs_lat = Entry(self.obs_lat_row,  textvariable=self.obs_lat_var)
+        self.obs_lat = Entry(self.obs_lat_row,  textvariable=self.obs_lat_var, validate="focusout", validatecommand=self.location_changed)
 
         self.obs_lon_row = Frame(self.obs_frame)
         self.obs_lon_label =Label(self.obs_lon_row, text="Longitude: ")
         self.obs_lon_var = StringVar()
         self.obs_lon_var.set(self.conf.observer_lon)
-        self.obs_lon = Entry(self.obs_lon_row,  textvariable=self.obs_lon_var)
+        self.obs_lon = Entry(self.obs_lon_row,  textvariable=self.obs_lon_var, validate="focusout", validatecommand=self.location_changed)
 
         self.obs_alt_row = Frame(self.obs_frame)
         self.obs_alt_label = Label(self.obs_alt_row, text="Altitude (m): ")
         self.obs_alt_var = DoubleVar()
         self.obs_alt_var.set(self.conf.observer_alt)
-        self.obs_alt = Spinbox(self.obs_alt_row, from_=0, to=10000, textvariable=self.obs_alt_var)
+        self.obs_alt = Spinbox(self.obs_alt_row, from_=0, to=10000, textvariable=self.obs_alt_var, validate="focusout", validatecommand=self.location_changed)
 
         self.obs_offset_row = Frame(self.obs_frame)
         self.obs_offset_label = Label(self.obs_offset_row, text="Time offset (min): ")
         self.obs_offset_var = DoubleVar()
         self.obs_offset_var.set(self.conf.observer_offset)
         self.obs_offset = Spinbox(self.obs_offset_row,from_=-9999999, to=9999999, textvariable=self.obs_offset_var)
+
+        #self.obs_loc_str = StringVar()
+        self.obs_loc_str.set("Not initialized")
+        self.obs_loc_lbl = Label(self.obs_frame, textvariable=self.obs_loc_str)
 
         self.obs_time_ts = load.timescale()
         self.obs_time_t = self.obs_time_ts.now()
@@ -163,6 +172,7 @@ class UI(object):
         self.obs_offset_row.pack()
         self.obs_offset_label.pack(side=LEFT)
         self.obs_offset.pack(side=LEFT)
+        self.obs_loc_lbl.pack()
         self.obs_time_lbl.pack()
 
 # Tracker
@@ -207,7 +217,7 @@ class UI(object):
 
         self.track_btn_txt = StringVar()
         self.track_btn_txt.set("Connect")
-        self.track_btn = Button(self.track_frame, textvariable=self.track_btn_txt)
+        self.track_btn = Button(self.track_frame, textvariable=self.track_btn_txt, command=self.track_btn_cmd)
 
         self.track_status_txt = StringVar()
         self.track_status_txt.set("Not connected")
@@ -235,14 +245,53 @@ class UI(object):
         self.track_btn.pack()
         self.track_status_lbl.pack()
 
+
+        # timer to update the time:
+        self.timer=Timer(1., self.update_time)
+        self.timer.start()
+        self.location_changed()
+        self.sat_changed('')
+
+
         self.main_frame.mainloop()
 
 
+# Buttons
+
+    def indi_connect_cmd(self):
+        showinfo('Titre', 'indi_connect_cmd not yet implemented')
+    def indi_telescope_cfg_cmd(self):
+        showinfo('Titre', 'indi_telescope_cfg_cmd not yet implemented')
+    def indi_joystick_cfg_cmd(self):
+        showinfo('Titre', 'indi_joystick_cfg_cmd not yet implemented')
+    def sat_list_cat_cmd(self):
+        showinfo('Titre', 'sat_list_cat_cmd not yet implemented')
+    def track_btn_cmd(self):
+        showinfo('Titre', 'track_btn_cmd not yet implemented')
+
+    def sat_changed(self, text):
+        self.sat_TLE_txt.delete('1.0', 'end')
+        self.sat=self.conf.satellites_tle[self.sat_list.get()]
+        self.sat_TLE_txt.insert('1.0', self.sat.name + ' is selected')
 
 
+    def location_changed(self):
+        try:
+            #showinfo('Titre', 'new location')
+            self.obs = Topos(self.obs_lat_var.get(), self.obs_lon_var.get(), None, None, self.obs_alt_var.get())
+            self.obs_loc_str.set("Valid location")
+        except ValueError:
+            self.obs_loc_str.set("Invalid location")
+        return True
 
+    def update_time(self):
+        tmp=self.obs_time_ts.now().tt + self.obs_offset_var.get()/24/60
+        self.obs_time_t = self.obs_time_ts.tt(jd=tmp)
+        self.obs_time_t_str.set("Time: "+self.obs_time_t.utc_iso())
 
+        self.difference = self.sat - self.obs
+        self.sat_alt, self.sat_az, self.sat_dist = self.difference.at(self.obs_time_t).altaz()
+        self.sat_ephem_var.set("Alt: "+str(self.sat_alt)+" Az: "+str(self.sat_az)+" Dist: "+str(self.sat_dist.km)+" Epoch diff:"+str(self.obs_time_t-self.sat.epoch))
 
-
-
-
+        self.timer=Timer(1., self.update_time)
+        self.timer.start()
