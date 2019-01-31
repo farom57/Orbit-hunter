@@ -8,7 +8,6 @@ from tracker import *
 from tkinter import *
 from tkinter.ttk import *
 from tkinter.messagebox import showinfo
-from skyfield.api import load, Topos
 from threading import Timer
 import Pmw
 
@@ -269,29 +268,28 @@ class UI(object):
     def track_btn_cmd(self):
         showinfo('Titre', 'track_btn_cmd not yet implemented')
 
+# Values entered callbacks
     def sat_changed(self, text):
         self.sat_TLE_txt.delete('1.0', 'end')
-        self.sat=self.conf.satellites_tle[self.sat_list.get()]
-        self.sat_TLE_txt.insert('1.0', self.sat.name + ' is selected')
+        self.conf.selected_satellite = self.sat_list.get()
+        self.sat_TLE_txt.insert('1.0', self.conf.selected_satellite + ' is selected')
+
 
 
     def location_changed(self):
         try:
-            #showinfo('Titre', 'new location')
-            self.obs = Topos(self.obs_lat_var.get(), self.obs_lon_var.get(), None, None, self.obs_alt_var.get())
+            self.conf.observer_alt = self.obs_alt_var.get()
+            self.conf.observer_lat = self.obs_lat_var.get()
+            self.conf.observer_lon = self.obs_lon_var.get()
             self.obs_loc_str.set("Valid location")
         except ValueError:
             self.obs_loc_str.set("Invalid location")
         return True
 
+# 1sec update (time & sat location)
     def update_time(self):
-        tmp=self.obs_time_ts.now().tt + self.obs_offset_var.get()/24/60
-        self.obs_time_t = self.obs_time_ts.tt(jd=tmp)
-        self.obs_time_t_str.set("Time: "+self.obs_time_t.utc_iso())
-
-        self.difference = self.sat - self.obs
-        self.sat_alt, self.sat_az, self.sat_dist = self.difference.at(self.obs_time_t).altaz()
-        self.sat_ephem_var.set("Alt: "+str(self.sat_alt)+" Az: "+str(self.sat_az)+" Dist: "+str(self.sat_dist.km)+" Epoch diff:"+str(self.obs_time_t-self.sat.epoch))
-
+        self.obs_time_t_str.set("Time: "+self.conf.t_iso)
         self.timer=Timer(1., self.update_time)
         self.timer.start()
+
+
