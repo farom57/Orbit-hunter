@@ -2,8 +2,7 @@
 Author: Romain Fafet (farom57@gmail.com)
 """
 
-from configuration import *
-from tracker import *
+from sattrack import *
 
 from tkinter import *
 from tkinter.ttk import *
@@ -14,16 +13,12 @@ import Pmw
 class UI(object):
     """ User interface of pySatTrack
 
-    The UI modifies the Configuration (conf) and control the Tracker to start
-    and stop.
     The user interface is based on Tkinter
 
     """
 
-    def __init__(self, tracker):
-        self.tracker = tracker
-        self.conf = self.tracker.conf
-        self.tracker.register_ui(self)
+    def __init__(self,st):
+        self.st = st
 
         self.main_frame = Pmw.initialise()
 
@@ -93,13 +88,13 @@ class UI(object):
 
         self.sat_list_row = Frame(self.sat_frame)
         self.sat_list_lbl = Label(self.sat_list_row,  text="Satellite:")
-        self.sat_list_options = list(self.conf.satellites_tle.keys())
+        self.sat_list_options = list(self.st.satellites_tle.keys())
         '''self.sat_list_var = StringVar()
         self.sat_list_var.set(self.sat_list_options[0])
         self.sat_list = OptionMenu(self.sat_list_row, self.indi_joystick_var, *self.sat_list_options)'''
         self.sat_list = Pmw.ComboBox(self.sat_list_row,scrolledlist_items = self.sat_list_options,listheight = 150, history=0, selectioncommand = self.sat_changed)
         self.sat_list.config(width = 20)
-        self.sat_list.selectitem(self.conf.selected_satellite)
+        self.sat_list.selectitem(self.st.selected_satellite)
         self.sat_list_cat = Button(self.sat_list_row, text="Catalogs", width = 6, command=self.sat_list_cat_cmd)
 
         self.sat_TLE_lbl = Label(self.sat_frame,  text="TLE:")
@@ -125,25 +120,25 @@ class UI(object):
         self.obs_lat_row = Frame(self.obs_frame)
         self.obs_lat_label = Label(self.obs_lat_row, text="Latitude: ")
         self.obs_lat_var = StringVar()
-        self.obs_lat_var.set(self.conf.observer_lat)
+        self.obs_lat_var.set(self.st.observer_lat)
         self.obs_lat = Entry(self.obs_lat_row,  textvariable=self.obs_lat_var, validate="focusout", validatecommand=self.location_changed)
 
         self.obs_lon_row = Frame(self.obs_frame)
         self.obs_lon_label =Label(self.obs_lon_row, text="Longitude: ")
         self.obs_lon_var = StringVar()
-        self.obs_lon_var.set(self.conf.observer_lon)
+        self.obs_lon_var.set(self.st.observer_lon)
         self.obs_lon = Entry(self.obs_lon_row,  textvariable=self.obs_lon_var, validate="focusout", validatecommand=self.location_changed)
 
         self.obs_alt_row = Frame(self.obs_frame)
         self.obs_alt_label = Label(self.obs_alt_row, text="Altitude (m): ")
         self.obs_alt_var = DoubleVar()
-        self.obs_alt_var.set(self.conf.observer_alt)
+        self.obs_alt_var.set(self.st.observer_alt)
         self.obs_alt = Spinbox(self.obs_alt_row, from_=0, to=10000, textvariable=self.obs_alt_var, validate="focusout", validatecommand=self.location_changed)
 
         self.obs_offset_row = Frame(self.obs_frame)
         self.obs_offset_label = Label(self.obs_offset_row, text="Time offset (min): ")
         self.obs_offset_var = DoubleVar()
-        self.obs_offset_var.set(self.conf.observer_offset)
+        self.obs_offset_var.set(self.st.observer_offset)
         self.obs_offset = Spinbox(self.obs_offset_row,from_=-9999999, to=9999999, textvariable=self.obs_offset_var)
 
         #self.obs_loc_str = StringVar()
@@ -181,37 +176,37 @@ class UI(object):
         self.track_method_lbl = Label(self.track_method_row, text="Method:")
         self.track_method_options = ("Goto","Move","Timed move", "Speed")
         self.track_method_var = StringVar()
-        self.track_method_var.set(self.conf.track_method)
+        self.track_method_var.set(self.st.track_method)
         self.track_method = OptionMenu(self.track_method_row, self.track_method_var, *self.track_method_options)
 
         self.track_P_row = Frame(self.track_frame)
         self.track_P_label = Label(self.track_P_row, text="P gain: ")
         self.track_P_var = DoubleVar()
-        self.track_P_var.set(self.conf.p_gain)
+        self.track_P_var.set(self.st.p_gain)
         self.track_P = Spinbox(self.track_P_row, from_=0, to=10, increment=0.1,  textvariable=self.track_P_var)
 
         self.track_I_row = Frame(self.track_frame)
         self.track_I_label = Label(self.track_I_row, text="Tau I: ")
         self.track_I_var = DoubleVar()
-        self.track_I_var.set(self.conf.tau_i)
+        self.track_I_var.set(self.st.tau_i)
         self.track_I = Spinbox(self.track_I_row, from_=0, to=100, increment=0.1,  textvariable=self.track_I_var)
 
         self.track_D_row = Frame(self.track_frame)
         self.track_D_label = Label(self.track_D_row, text="Tau D: ")
         self.track_D_var = DoubleVar()
-        self.track_D_var.set(self.conf.tau_d)
+        self.track_D_var.set(self.st.tau_d)
         self.track_D = Spinbox(self.track_D_row, from_=0, to=100, increment=0.1,  textvariable=self.track_D_var)
 
         self.track_maxrate_row = Frame(self.track_frame)
         self.track_maxrate_label = Label(self.track_maxrate_row, text="Max rate: ")
         self.track_maxrate_var = DoubleVar()
-        self.track_maxrate_var.set(self.conf.max_rate)
+        self.track_maxrate_var.set(self.st.max_rate)
         self.track_maxrate = Spinbox(self.track_maxrate_row, from_=0, to=1000, increment=1,  textvariable=self.track_maxrate_var)
 
         self.track_isat_row = Frame(self.track_frame)
         self.track_isat_label = Label(self.track_isat_row, text="Saturation: ")
         self.track_isat_var = DoubleVar()
-        self.track_isat_var.set(self.conf.i_sat)
+        self.track_isat_var.set(self.st.i_sat)
         self.track_isat = Spinbox(self.track_isat_row, from_=0, to=2, increment=0.1,  textvariable=self.track_isat_var)
 
         self.track_btn_txt = StringVar()
@@ -271,24 +266,24 @@ class UI(object):
 # Values entered callbacks
     def sat_changed(self, text):
         self.sat_TLE_txt.delete('1.0', 'end')
-        self.conf.selected_satellite = self.sat_list.get()
-        self.sat_TLE_txt.insert('1.0', self.conf.selected_satellite + ' is selected')
+        self.st.selected_satellite = self.sat_list.get()
+        self.sat_TLE_txt.insert('1.0', self.st.selected_satellite + ' is selected')
 
 
 
     def location_changed(self):
-        try:
-            self.conf.observer_alt = self.obs_alt_var.get()
-            self.conf.observer_lat = self.obs_lat_var.get()
-            self.conf.observer_lon = self.obs_lon_var.get()
-            self.obs_loc_str.set("Valid location")
-        except ValueError:
-            self.obs_loc_str.set("Invalid location")
+        #try:
+        self.st.observer_alt = self.obs_alt_var.get()
+        self.st.observer_lat = self.obs_lat_var.get()
+        self.st.observer_lon = self.obs_lon_var.get()
+        #    self.obs_loc_str.set("Valid location")
+        #except ValueError:
+        #    self.obs_loc_str.set("Invalid location")
         return True
 
 # 1sec update (time & sat location)
     def update_time(self):
-        self.obs_time_t_str.set("Time: "+self.conf.t_iso)
+        self.obs_time_t_str.set("Time: "+self.st.t_iso())
         self.timer=Timer(1., self.update_time)
         self.timer.start()
 

@@ -3,15 +3,16 @@ Author: Romain Fafet (farom57@gmail.com)
 """
 from skyfield.api import load, Topos
 
-class Configuration(object):
-    """ A Configuration store all the settings for the Tracker.
+class SatTrack(object):
+    """ SatTrack is the core class of pysattrack
 
-    Those settings can be edited through the UI. Configuration class also
-    provide functions to load and save itself on a file
+    The configuration is performed by the GUI by changing the attributs.
+    INDI connection is controled by connect() and disconnect() and the tracking
+    by start(), stop(), move(ra_angle,dec_angle) and goto_rise_and_wait().
     """
     def __init__(self):
 
-    # savable variables
+    # configuration variables: they that can be assessed by the UI and saved
         self.indi_server_ip = "127.0.0.1"
         self.indi_port = 7624
         self.indi_telescope_driver = ""
@@ -23,7 +24,7 @@ class Configuration(object):
         self._observer_alt = 5
         self._observer_lat = "43.538 N"
         self._observer_lon = "6.955 E"
-        self._observer_offset = 0 # in days
+        self.observer_offset = 0 # in days
 
         self.track_method = "Speed"
 
@@ -46,33 +47,53 @@ class Configuration(object):
             self.satellites_tle = load.tle(self.satellites_url, reload=True)
         self.sat = self.satellites_tle[self._selected_satellite] # TODO: add error management
 
-    def t(self):
-        tmp=self.ts.now().tt + self._observer_offset
-        return self.ts.tt(jd=tmp)
 
-    def t_iso(self):
-        tmp=self.ts.now().tt + self.observer_offset
-        return self.ts.tt(jd=tmp).utc_iso()
 
-    def _set_selected_satellite(self, n_sat):
+    # Some properties to maintain to preserve internal consistency when attributes are updated and for error management
+    @property
+    def selected_satellite(self):
+        return self._selected_satellite
+    @selected_satellite.setter
+    def selected_satellite(self, n_sat):
         self._selected_satellite = n_sat
         self.sat = self.satellites_tle[self._selected_satellite] # TODO: add error management
-
-    def _set_observer_alt(self,  n_alt):
+    @property
+    def observer_alt(self):
+        return self._observer_alt
+    @observer_alt.setter
+    def observer_alt(self,  n_alt):
         self._observer_alt=n_alt
         self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
 
-    def _set_observer_lat(self, n_lat):
+    @property
+    def observer_lat(self):
+        return self._observer_lat
+    @observer_lat.setter
+    def observer_lat(self,  n_lat):
         self._observer_lat=n_lat
-        self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
+        self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)# TODO: add error management
 
-    def _set_observer_lon(self, n_lon):
+    @property
+    def observer_lon(self):
+        return self._observer_lon
+    @observer_lon.setter
+    def observer_lon(self,  n_lon):
         self._observer_lon=n_lon
         self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
 
-    def get_sat_pos(self):
+    # Utility functions
+    def sat_pos(self):
+        """ Satellite position: ra, dec, alt, az, distance"""
         diff = self.sat - self.obs
         topocentric = diff.at(self.t())
         alt, az, distance = topocentric.altaz()
         ra, dec = topocentric.radec()
         return ra, dec, alt, az, distance
+
+    def t(self):
+        tmp=self.ts.now().tt + self.observer_offset
+        return self.ts.tt(jd=tmp)
+
+    def t_iso(self):
+        tmp=self.ts.now().tt + self.observer_offset
+        return self.ts.tt(jd=tmp).utc_iso()
