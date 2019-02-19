@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE Project SYSTEM "Project-5.1.dtd">
 <!-- eric project file for project pysattrack -->
-<!-- Saved: 2019-02-03, 14:07:30 -->
+<!-- Saved: 2019-02-05, 01:07:31 -->
 <!-- Copyright (C) 2019 Romain Fafet, farom57@gmail.com -->
 <Project version="5.1">
   <Language>en_US</Language>
@@ -17,7 +17,6 @@
     <Source>__init__.py</Source>
     <Source>pysattrack.py</Source>
     <Source>sattrack.py</Source>
-    <Source>tracker.py</Source>
     <Source>ui.py</Source>
   </Sources>
   <Others>

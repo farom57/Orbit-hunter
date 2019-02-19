@@ -2,6 +2,8 @@
 Author: Romain Fafet (farom57@gmail.com)
 """
 from skyfield.api import load, Topos
+from time import sleep
+import PyIndi
 
 class SatTrack(object):
     """ SatTrack is the core class of pysattrack
@@ -35,15 +37,17 @@ class SatTrack(object):
         self.i_sat = 0.5
 
     # dynamic data
+        self.ui=None
+        self.indiclient=IndiClient(self)
         self.ts = load.timescale()
         self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
-
 
         # reload TLE if old data
         self.satellites_tle = load.tle(self.satellites_url) # TODO: add error management
         age = self.t() - self.satellites_tle[self._selected_satellite].epoch
-        print('{:.3f} days away from epoch'.format(age))
+        self.log(2,'TLE {:.3f} days old'.format(age))
         if abs(age) > 3:
+            self.log(1,'Updating TLE'.format(age))
             self.satellites_tle = load.tle(self.satellites_url, reload=True)
         self.sat = self.satellites_tle[self._selected_satellite] # TODO: add error management
 
@@ -91,9 +95,89 @@ class SatTrack(object):
         return ra, dec, alt, az, distance
 
     def t(self):
+        """ Current sofware time"""
         tmp=self.ts.now().tt + self.observer_offset
         return self.ts.tt(jd=tmp)
 
     def t_iso(self):
+        """ Current sofware time in iso format"""
         tmp=self.ts.now().tt + self.observer_offset
         return self.ts.tt(jd=tmp).utc_iso()
+
+    def log(self, level, text):
+        """ level: 0 for error, 1 for warning, 2 for common messages, 3 for extended logging """
+        print(text)
+        #TODO add logs into ui
+
+    #INDIconnection
+    def connect(self):
+        if self.is_connected():
+            self.log(1,"Already connected")
+            return None
+
+        self.log(2,"Connecting to " + self.indi_server_ip + ":" + str(self.indi_port))
+        self.indiclient.setServer(self.indi_server_ip,self.indi_port)
+
+        if (not(self.indiclient.connectServer())):
+            self.log(0,"Connection error")
+            return None
+
+        if self.ui is not None:
+            self.ui.connected()
+        self.log(2,"Connected")
+
+
+    def disconnect(self):
+        if not self.is_connected():
+            self.log(1,"Already disconnected")
+            return None
+
+        if not(self.indiclient.disconnectServer()):
+            self.log(0,"Error during disconnection")
+            return None
+
+        if self.ui is not None:
+            self.ui.disconnected()
+            self.log(2,"Disconnection successful")
+
+
+
+    def is_connected(self):
+        return self.indiclient.isServerConnected()
+
+    def setUI(self, ui):
+        self.ui=ui
+
+
+
+
+
+class IndiClient(PyIndi.BaseClient):
+    def __init__(self, st):
+        super(IndiClient, self).__init__()
+        self.st=st
+    def newDevice(self, d):
+        self.st.log(2, "New device: "+d.getDeviceName())
+        self.st.ui.addTelescope(d.getDeviceName())
+    def newProperty(self, p):
+        pass
+    def removeProperty(self, p):
+        pass
+    def newBLOB(self, bp):
+        pass
+    def newSwitch(self, svp):
+        pass
+    def newNumber(self, nvp):
+        pass
+    def newText(self, tvp):
+        pass
+    def newLight(self, lvp):
+        pass
+    def newMessage(self, d, m):
+        pass
+    def serverConnected(self):
+        pass
+    def serverDisconnected(self, code):
+        if self.st.ui is not None:
+            self.st.ui.disconnected()
+        self.st.log(0, "Connection lost")

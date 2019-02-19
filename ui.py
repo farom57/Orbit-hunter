@@ -19,6 +19,7 @@ class UI(object):
 
     def __init__(self,st):
         self.st = st
+        self.st.setUI(self)
 
         self.main_frame = Pmw.initialise()
 
@@ -44,7 +45,7 @@ class UI(object):
 
         self.indi_telescope_row = Frame(self.indi_frame)
         self.indi_telescope_lbl = Label(self.indi_telescope_row,  text="Telescope:")
-        self.indi_telescope_options = ("None", )
+        self.indi_telescope_options = ["None", "None bis"]
         self.indi_telescope_var = StringVar()
         self.indi_telescope_var.set(self.indi_telescope_options[0])
         self.indi_telescope = OptionMenu(self.indi_telescope_row, self.indi_telescope_var, *self.indi_telescope_options)
@@ -53,7 +54,7 @@ class UI(object):
 
         self.indi_joystick_row = Frame(self.indi_frame)
         self.indi_joystick_lbl = Label(self.indi_joystick_row,  text="Joystick:")
-        self.indi_joystick_options = ("None",)
+        self.indi_joystick_options = ["None"]
         self.indi_joystick_var = StringVar()
         self.indi_joystick_var.set(self.indi_joystick_options[0])
         self.indi_joystick = OptionMenu(self.indi_joystick_row, self.indi_joystick_var, *self.indi_joystick_options)
@@ -253,7 +254,11 @@ class UI(object):
 # Buttons
 
     def indi_connect_cmd(self):
-        showinfo('Titre', 'indi_connect_cmd not yet implemented')
+        if self.st.is_connected():
+            self.st.disconnect()
+        else:
+            self.st.connect()
+
     def indi_telescope_cfg_cmd(self):
         showinfo('Titre', 'indi_telescope_cfg_cmd not yet implemented')
     def indi_joystick_cfg_cmd(self):
@@ -280,6 +285,23 @@ class UI(object):
         #except ValueError:
         #    self.obs_loc_str.set("Invalid location")
         return True
+
+# System callbacks
+    def connected(self):
+        self.indi_connect_var.set("Disconnect")
+        self.indi_status_var.set("Connected but driver not configured")
+    def disconnected(self):
+        self.indi_connect_var.set("Connect")
+        self.indi_status_var.set("Not connected")
+        self.indi_telescope_options = ("None", )
+        self.indi_telescope_var.set(self.indi_telescope_options[0])
+    def addTelescope(self, device_name):
+        if self.indi_telescope_options[0]=="None":
+            self.indi_telescope_options[0]=device_name
+        else:
+            self.indi_telescope_options.append(device_name)
+        self.indi_telescope.config(items = self.indi_telescope_options)
+        self.indi_telescope_var.set(self.indi_telescope_options[0])
 
 # 1sec update (time & sat location)
     def update_time(self):
