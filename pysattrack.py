@@ -9,5 +9,8 @@ from ui import *
 
 # TODO: load existing configuration if any
 st = SatTrack()
-ui = UI(st) # infinite loop until it quits
+app = QtWidgets.QApplication(sys.argv)  # A new instance of QApplication
+ui = UI(st)
+ui.show()
+app.exec_()
 # TODO: st.save()
