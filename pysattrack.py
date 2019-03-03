@@ -6,6 +6,7 @@ Author: Romain Fafet (farom57@gmail.com)
 
 from sattrack import *
 from ui import *
+import sys
 
 # TODO: load existing configuration if any
 st = SatTrack()

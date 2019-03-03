@@ -6,7 +6,7 @@ from sattrack import *
 from PyQt5 import QtCore, QtGui, QtWidgets
 from mainwindow import Ui_MainWindow
 from threading import Timer
-import sys
+
 
 class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
     """ User interface of pySatTrack """
@@ -16,10 +16,38 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.st = st
         self.st.setUI(self)
 
-
         self.setupUi(self)
 
+        # Slot connect to internal functions
+        self.connectButton.clicked.connect(self.connect_clicked)
+        self.telescopeComboBox.currentIndexChanged['QString'].connect(self.telescope_changed)
+        self.joystickCheckBox.stateChanged.connect(self.joystick_changed)
 
+        self.trackingComboBox.currentIndexChanged['QString'].connect(self.trackmode_changed)
+        self.pGainSpinBox.valueChanged['double'].connect(self.trackparam_changed)
+        self.tauISpinBox.valueChanged['double'].connect(self.trackparam_changed)
+        self.tauDSpinBox.valueChanged['double'].connect(self.trackparam_changed)
+        self.maxRateSpinBox.valueChanged['double'].connect(self.trackparam_changed)
+        self.saturationSpinBox.valueChanged['double'].connect(self.trackparam_changed)
+        self.trackButton.clicked.connect(self.track_clicked)
+
+        self.latitudeEdit.textChanged.connect(self.location_changed)
+        self.longitudeEdit.textChanged.connect(self.location_changed)
+        self.altitudeSpinBox.valueChanged['int'].connect(self.location_changed)
+
+        self.realTimeButton.toggled['bool'].connect(self.timemode_changed)
+        self.setTimeButton.clicked.connect(self.settime_clicked)
+
+        self.catalogSatButton.toggled['bool'].connect(self.satmode_changed)
+        self.satComboBox.currentIndexChanged['QString'].connect(self.satellite_changed)
+        self.catalogConfigButton.clicked.connect(self.catconfig_clicked)
+        self.tleEdit.textChanged.connect(self.tle_changed)
+
+        # Additionnal slot connection to grey out widged depending on optionbox
+        self.realTimeButton.toggled['bool'].connect(self.setTimeButton.setDisabled)
+        self.catalogSatButton.toggled['bool'].connect(self.satComboBox.setEnabled)
+        self.catalogSatButton.toggled['bool'].connect(self.catalogConfigButton.setEnabled)
+        self.catalogSatButton.toggled['bool'].connect(self.tleEdit.setDisabled)
 
 
         # timer to update the time:
@@ -30,38 +58,58 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
 
 # Buttons
 
-    def indi_connect_cmd(self):
+    def connect_clicked(self):
         if self.st.is_connected():
             self.st.disconnect()
         else:
             self.st.connect()
 
-    def indi_telescope_cfg_cmd(self):
-        showinfo('Titre', 'indi_telescope_cfg_cmd not yet implemented')
-    def indi_joystick_cfg_cmd(self):
-        showinfo('Titre', 'indi_joystick_cfg_cmd not yet implemented')
-    def sat_list_cat_cmd(self):
-        showinfo('Titre', 'sat_list_cat_cmd not yet implemented')
-    def track_btn_cmd(self):
-        showinfo('Titre', 'track_btn_cmd not yet implemented')
+    def track_clicked(self):
+        self.st.log(1, 'track_btn_cmd not yet implemented')
+
+    def settime_clicked(self):
+        self.st.log(1, 'settime_btn_cmd not yet implemented')
+
+    def catconfig_clicked(self):
+        self.st.log(1, 'catconfig_btn_cmd not yet implemented')
 
 # Values entered callbacks
-    def sat_changed(self, text):
-        self.sat_TLE_txt.delete('1.0', 'end')
-        self.st.selected_satellite = self.sat_list.get()
-        self.sat_TLE_txt.insert('1.0', self.st.selected_satellite + ' is selected')
+    def timemode_changed(self, realtime):
+        self.st.log(1, 'indi_telescope_chg not yet implemented')
 
+    def satmode_changed(self, catalog):
+        self.st.log(1, 'indi_telescope_chg not yet implemented')
 
+    def telescope_changed(self, driver):
+        self.st.log(1, 'indi_telescope_chg not yet implemented')
+
+    def joystick_changed(self, enabled):
+        self.st.log(1, 'indi_joystick_chg not yet implemented')
+
+    def satellite_changed(self):
+        #self.sat_TLE_txt.delete('1.0', 'end')
+        #self.st.selected_satellite = self.sat_list.get()
+        #self.sat_TLE_txt.insert('1.0', self.st.selected_satellite + ' is selected')
+        self.st.log(1, 'sat_chg not yet implemented')
+
+    def tle_changed(self):
+        self.st.log(1, 'sat_chg_cmd not yet implemented')
 
     def location_changed(self):
         #try:
-        self.st.observer_alt = self.obs_alt_var.get()
-        self.st.observer_lat = self.obs_lat_var.get()
-        self.st.observer_lon = self.obs_lon_var.get()
+        #self.st.observer_alt = self.obs_alt_var.get()
+        #self.st.observer_lat = self.obs_lat_var.get()
+        #self.st.observer_lon = self.obs_lon_var.get()
         #    self.obs_loc_str.set("Valid location")
         #except ValueError:
         #    self.obs_loc_str.set("Invalid location")
-        return True
+        self.st.log(1, 'not yet implemented')
+
+    def trackmode_changed(self, mode):
+        self.st.log(1, 'trackmode_changed not yet implemented')
+
+    def trackparam_changed(self,  dummy):
+        self.st.log(1, 'trackparam_changed not yet implemented')
 
 # System callbacks
     def connected(self):
