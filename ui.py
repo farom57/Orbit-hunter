@@ -5,7 +5,9 @@ Author: Romain Fafet (farom57@gmail.com)
 from sattrack import *
 from PyQt5 import QtCore, QtGui, QtWidgets
 from mainwindow import Ui_MainWindow
+from timedialog import Ui_Timedialog
 from threading import Timer
+
 
 
 class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
@@ -68,14 +70,16 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.st.log(1, 'track_btn_cmd not yet implemented')
 
     def settime_clicked(self):
-        self.st.log(1, 'settime_btn_cmd not yet implemented')
+        self.timedg=Timedialog(self.st)
+        self.timedg.show_modal()
 
     def catconfig_clicked(self):
         self.st.log(1, 'catconfig_btn_cmd not yet implemented')
 
 # Values entered callbacks
     def timemode_changed(self, realtime):
-        self.st.log(1, 'indi_telescope_chg not yet implemented')
+        if realtime:
+            self.st.observer_offset=0
 
     def satmode_changed(self, catalog):
         self.st.log(1, 'indi_telescope_chg not yet implemented')
@@ -130,8 +134,38 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
 
 # 1sec update (time & sat location)
     def update_time(self):
-        self.obs_time_t_str.set("Time: "+self.st.t_iso())
+        self.timeLabel.setText(self.st.t_iso())
         self.timer=Timer(1., self.update_time)
         self.timer.start()
 
+class Timedialog(QtWidgets.QDialog,  Ui_Timedialog):
+    """ Dialog to set simulation time """
 
+    def __init__(self, st):
+        super(Timedialog, self).__init__()
+        self.st=st
+        self.setupUi(self)
+
+        datetime = QtCore.QDateTime.fromString(self.st.t_iso(), "yyyy-MM-ddTHH:mm:ssZ")
+        datetime.setOffsetFromUtc(0)
+        self.dateTimeEdit.setDateTime(datetime)
+
+        self.buttonBox.accepted.connect(self.settime)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+
+    def settime(self):
+        self.st.log(1, self.st.observer_offset)
+        self.st.set_time(
+            self.dateTimeEdit.date().year(),
+            self.dateTimeEdit.date().month(),
+            self.dateTimeEdit.date().day(),
+            self.dateTimeEdit.time().hour(),
+            self.dateTimeEdit.time().minute(),
+            self.dateTimeEdit.time().second())
+        self.st.log(1, self.st.observer_offset)
+
+
+    def show_modal(self):
+        self.setModal(True)
+        self.show()

@@ -99,6 +99,9 @@ class SatTrack(object):
         tmp=self.ts.now().tt + self.observer_offset
         return self.ts.tt(jd=tmp)
 
+    def set_time(self, year, month=1, day=1, hour=0, minute=0, second=0.0):
+        self.observer_offset=self.ts.utc(year, month, day, hour, minute, second).tt-self.ts.now().tt
+
     def t_iso(self):
         """ Current sofware time in iso format"""
         tmp=self.ts.now().tt + self.observer_offset
