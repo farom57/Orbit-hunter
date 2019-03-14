@@ -20,7 +20,20 @@ class SatTrack(object):
         self.indi_telescope_driver = ""
         self.indi_joystick_driver = ""
 
-        self.satellites_url = "http://celestrak.com/NORAD/elements/stations.txt"
+        self.catalogs = [
+            CatalogItem("Recent launches", "https://celestrak.com/NORAD/elements/tle-new.txt",  True),
+            CatalogItem("Space stations", "https://celestrak.com/NORAD/elements/stations.txt",  True),
+            CatalogItem("100 brightest", "https://celestrak.com/NORAD/elements/visual.txt",  True),
+            CatalogItem("Active satellites", "https://celestrak.com/NORAD/elements/active.txt",  False),
+            CatalogItem("Geosynchronous", "https://celestrak.com/NORAD/elements/geo.txt",  False),
+            CatalogItem("Iridium", "https://celestrak.com/NORAD/elements/iridium.txt",  False),
+            CatalogItem("Iridium NEXT", "https://celestrak.com/NORAD/elements/iridium-NEXT.txt",  False),
+            CatalogItem("Globalstar", "https://celestrak.com/NORAD/elements/globalstar.txt",  False),
+            CatalogItem("Intelsat", "https://celestrak.com/NORAD/elements/intelsat.txt",  False),
+            CatalogItem("SES", "https://celestrak.com/NORAD/elements/ses.txt",  False),
+            CatalogItem("Orbcomm", "https://celestrak.com/NORAD/elements/orbcomm.txt",  False),
+            CatalogItem("Amateur Radio", "https://celestrak.com/NORAD/elements/amateur.txt",  False)
+        ]
         self._selected_satellite = 'ISS (ZARYA)'
 
         self._observer_alt = 5
@@ -41,14 +54,8 @@ class SatTrack(object):
         self.indiclient=IndiClient(self)
         self.ts = load.timescale()
         self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
+        self.update_tle()
 
-        # reload TLE if old data
-        self.satellites_tle = load.tle(self.satellites_url) # TODO: add error management
-        age = self.t() - self.satellites_tle[self._selected_satellite].epoch
-        self.log(2,'TLE {:.3f} days old'.format(age))
-        if abs(age) > 3:
-            self.log(1,'Updating TLE'.format(age))
-            self.satellites_tle = load.tle(self.satellites_url, reload=True)
         self.sat = self.satellites_tle[self._selected_satellite] # TODO: add error management
 
 
@@ -59,8 +66,19 @@ class SatTrack(object):
         return self._selected_satellite
     @selected_satellite.setter
     def selected_satellite(self, n_sat):
-        self._selected_satellite = n_sat
-        self.sat = self.satellites_tle[self._selected_satellite] # TODO: add error management
+        # ensure that the satellite name is correct, manage the case of satellites whose key (name) is a number
+        try:
+            self.sat = self.satellites_tle[n_sat]
+        except:
+            try:
+                self.sat = self.satellites_tle[int(n_sat)]
+            except:
+                pass
+            else:
+                self._selected_satellite = int(n_sat)
+        else:
+            self._selected_satellite = n_sat
+
     @property
     def observer_alt(self):
         return self._observer_alt
@@ -111,6 +129,22 @@ class SatTrack(object):
         """ level: 0 for error, 1 for warning, 2 for common messages, 3 for extended logging """
         print(text)
         #TODO add logs into ui
+
+    def update_tle(self, max_age = 3):
+        """ Update satellite elements, only elements older than 'max_age' days are downloaded  """
+        self.satellites_tle=dict()
+        for catalog in self.catalogs:
+            if catalog.active:
+                current_tle=load.tle(catalog.url)  # TODO: add error management
+                age = self.t() - current_tle[list(current_tle)[0]].epoch
+                self.log(2,'TLE for ' + catalog.name + ' are {:.3f} days old'.format(age))
+                if abs(age) > max_age:
+                    self.log(1,'Updating TLE'.format(age))
+                    current_tle = load.tle(self.satellites_url, reload=True)
+                self.satellites_tle.update(current_tle)
+
+        if self.ui is not None:
+            self.ui.update_sat_list()
 
     #INDIconnection
     def connect(self):
@@ -184,3 +218,11 @@ class IndiClient(PyIndi.BaseClient):
         if self.st.ui is not None:
             self.st.ui.disconnected()
         self.st.log(0, "Connection lost")
+
+
+class CatalogItem(object):
+    """ Satellite catalog item """
+    def __init__(self, name, url, active=False):
+        self.name=name
+        self.url=url
+        self.active=active

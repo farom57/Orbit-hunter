@@ -6,6 +6,7 @@ from sattrack import *
 from PyQt5 import QtCore, QtGui, QtWidgets
 from mainwindow import Ui_MainWindow
 from timedialog import Ui_Timedialog
+from catalogdialog import Ui_Catalogdialog
 from threading import Timer
 
 
@@ -19,6 +20,7 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.st.setUI(self)
 
         self.setupUi(self)
+        self.update_sat_list()
 
         # Slot connect to internal functions
         self.connectButton.clicked.connect(self.connect_clicked)
@@ -74,7 +76,8 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.timedg.show_modal()
 
     def catconfig_clicked(self):
-        self.st.log(1, 'catconfig_btn_cmd not yet implemented')
+        self.catdg=Catalogdialog(self.st)
+        self.catdg.show_modal()
 
 # Values entered callbacks
     def timemode_changed(self, realtime):
@@ -90,11 +93,13 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
     def joystick_changed(self, enabled):
         self.st.log(1, 'indi_joystick_chg not yet implemented')
 
-    def satellite_changed(self):
+    def satellite_changed(self, name):
         #self.sat_TLE_txt.delete('1.0', 'end')
-        #self.st.selected_satellite = self.sat_list.get()
+        self.st.selected_satellite = name
+        age = self.st.t() - self.st.sat.epoch
+        self.satLabel.setText('Valid elements, ' + '{:.2f} days old'.format(age))
         #self.sat_TLE_txt.insert('1.0', self.st.selected_satellite + ' is selected')
-        self.st.log(1, 'sat_chg not yet implemented')
+        self.st.log(1, name)
 
     def tle_changed(self):
         self.st.log(1, 'sat_chg_cmd not yet implemented')
@@ -117,20 +122,35 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
 
 # System callbacks
     def connected(self):
+        """ when INDI connection is established"""
         self.indi_connect_var.set("Disconnect")
         self.indi_status_var.set("Connected but driver not configured")
     def disconnected(self):
+        """ when INDI connection is ended"""
         self.indi_connect_var.set("Connect")
         self.indi_status_var.set("Not connected")
         self.indi_telescope_options = ("None", )
         self.indi_telescope_var.set(self.indi_telescope_options[0])
     def addTelescope(self, device_name):
+        """ when INDI driver is detected"""
         if self.indi_telescope_options[0]=="None":
             self.indi_telescope_options[0]=device_name
         else:
             self.indi_telescope_options.append(device_name)
         self.indi_telescope.config(items = self.indi_telescope_options)
         self.indi_telescope_var.set(self.indi_telescope_options[0])
+    def update_sat_list(self):
+        """ when satellite list shell be updated"""
+        # build & sort key list
+        keys=[]
+        for key in self.st.satellites_tle:
+            keys.append(str(key))
+        keys.sort()
+
+        # update the combobox
+        self.satComboBox.clear()
+        for key in keys:
+            self.satComboBox.addItem(str(key))
 
 # 1sec update (time & sat location)
     def update_time(self):
@@ -144,18 +164,21 @@ class Timedialog(QtWidgets.QDialog,  Ui_Timedialog):
     def __init__(self, st):
         super(Timedialog, self).__init__()
         self.st=st
+
+        # UI setup
         self.setupUi(self)
-
-        datetime = QtCore.QDateTime.fromString(self.st.t_iso(), "yyyy-MM-ddTHH:mm:ssZ")
-        datetime.setOffsetFromUtc(0)
-        self.dateTimeEdit.setDateTime(datetime)
-
         self.buttonBox.accepted.connect(self.settime)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
 
+        # set initial date to now
+        datetime = QtCore.QDateTime.fromString(self.st.t_iso(), "yyyy-MM-ddTHH:mm:ssZ")
+        datetime.setOffsetFromUtc(0)
+        self.dateTimeEdit.setDateTime(datetime)
+
+
     def settime(self):
-        self.st.log(1, self.st.observer_offset)
+        """ Called when OK button pressed """
         self.st.set_time(
             self.dateTimeEdit.date().year(),
             self.dateTimeEdit.date().month(),
@@ -163,9 +186,50 @@ class Timedialog(QtWidgets.QDialog,  Ui_Timedialog):
             self.dateTimeEdit.time().hour(),
             self.dateTimeEdit.time().minute(),
             self.dateTimeEdit.time().second())
-        self.st.log(1, self.st.observer_offset)
 
 
     def show_modal(self):
         self.setModal(True)
         self.show()
+
+class Catalogdialog(QtWidgets.QDialog,  Ui_Catalogdialog):
+    """ Dialog to set satellite catalog """
+
+    def __init__(self, st):
+        super(Catalogdialog, self).__init__()
+        self.st=st
+
+        # UI setup
+        self.setupUi(self)
+        self.buttonBox.accepted.connect(self.setcatalog)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+
+        # Populate list widget
+        for catalog in self.st.catalogs:
+            item = QtWidgets.QListWidgetItem()
+            item.setText(catalog.name)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            if catalog.active:
+                item.setCheckState(QtCore.Qt.Checked)
+            else:
+                item.setCheckState(QtCore.Qt.Unchecked)
+            self.listWidget.addItem(item)
+
+    def setcatalog(self):
+        """ Update catalog checked states """
+        i=0
+        for catalog in self.st.catalogs:
+            if self.listWidget.item(i).checkState()==QtCore.Qt.Checked:
+                catalog.active=True
+            else:
+                catalog.active=False
+            i=i+1
+        self.st.update_tle()
+
+
+    def show_modal(self):
+        self.setModal(True)
+        self.show()
+
+
