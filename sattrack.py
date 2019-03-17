@@ -140,7 +140,7 @@ class SatTrack(object):
                 self.log(2,'TLE for ' + catalog.name + ' are {:.3f} days old'.format(age))
                 if abs(age) > max_age:
                     self.log(1,'Updating TLE'.format(age))
-                    current_tle = load.tle(self.satellites_url, reload=True)
+                    current_tle = load.tle(catalog.url, reload=True)
                 self.satellites_tle.update(current_tle)
 
         if self.ui is not None:

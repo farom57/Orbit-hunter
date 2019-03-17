@@ -20,7 +20,10 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.st.setUI(self)
 
         self.setupUi(self)
+
+        # Load dynamic content
         self.update_sat_list()
+        self.setText(
 
         # Slot connect to internal functions
         self.connectButton.clicked.connect(self.connect_clicked)
@@ -94,12 +97,10 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.st.log(1, 'indi_joystick_chg not yet implemented')
 
     def satellite_changed(self, name):
-        #self.sat_TLE_txt.delete('1.0', 'end')
         self.st.selected_satellite = name
         age = self.st.t() - self.st.sat.epoch
         self.satLabel.setText('Valid elements, ' + '{:.2f} days old'.format(age))
-        #self.sat_TLE_txt.insert('1.0', self.st.selected_satellite + ' is selected')
-        self.st.log(1, name)
+        self.st.log(1, 'Satellite changed: '+name)
 
     def tle_changed(self):
         self.st.log(1, 'sat_chg_cmd not yet implemented')
