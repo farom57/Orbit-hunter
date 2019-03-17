@@ -39,9 +39,10 @@ class SatTrack(object):
         self._observer_alt = 5
         self._observer_lat = "43.538 N"
         self._observer_lon = "6.955 E"
-        self.observer_offset = 0 # in days
+        self.observer_offset = 0    # in days
 
-        self.track_method = "Speed"
+        self.track_method = 0   # 0 = GOTO, 1 = Move, 2 = Timed moves, 3 = Speed
+
 
         self.p_gain = 0.5
         self.tau_i = 3

@@ -22,8 +22,18 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.setupUi(self)
 
         # Load dynamic content
+        self.hostEdit.setText(self.st.indi_server)
+        self.portEdit.setValue(self.st.indi_port)
+        self.trackingComboBox.setCurrentIndex(self.st.track_method)
+        self.pGainSpinBox.setValue(self.st.p_gain)
+        self.tauISpinBox.setValue(self.st.tau_i)
+        self.tauDSpinBox.setValue(self.st.tau_d)
+        self.maxRateSpinBox.setValue(self.st.max_rate)
+        self.saturationSpinBox.setValue(self.st.i_sat)
+        self.latitudeEdit.setText(self.st.observer_lat)
+        self.longitudeEdit.setText(self.st.observer_lon)
+        self.altitudeSpinBox.setValue(self.st.observer_alt)
         self.update_sat_list()
-        self.setText(
 
         # Slot connect to internal functions
         self.connectButton.clicked.connect(self.connect_clicked)
