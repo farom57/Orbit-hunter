@@ -22,7 +22,7 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.setupUi(self)
 
         # Load dynamic content
-        self.hostEdit.setText(self.st.indi_server)
+        self.hostEdit.setText(self.st.indi_server_ip)
         self.portEdit.setValue(self.st.indi_port)
         self.trackingComboBox.setCurrentIndex(self.st.track_method)
         self.pGainSpinBox.setValue(self.st.p_gain)
@@ -34,6 +34,7 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.longitudeEdit.setText(self.st.observer_lon)
         self.altitudeSpinBox.setValue(self.st.observer_alt)
         self.update_sat_list()
+
 
         # Slot connect to internal functions
         self.connectButton.clicked.connect(self.connect_clicked)
@@ -57,6 +58,7 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
 
         self.catalogSatButton.toggled['bool'].connect(self.satmode_changed)
         self.satComboBox.currentIndexChanged['QString'].connect(self.satellite_changed)
+        self.enable_satellite_changed = True
         self.catalogConfigButton.clicked.connect(self.catconfig_clicked)
         self.tleEdit.textChanged.connect(self.tle_changed)
 
@@ -107,10 +109,11 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.st.log(1, 'indi_joystick_chg not yet implemented')
 
     def satellite_changed(self, name):
-        self.st.selected_satellite = name
-        age = self.st.t() - self.st.sat.epoch
-        self.satLabel.setText('Valid elements, ' + '{:.2f} days old'.format(age))
-        self.st.log(1, 'Satellite changed: '+name)
+        if self.enable_satellite_changed:   # can be disabled during combobox update after new catalog selection
+            self.st.selected_satellite = name
+            age = self.st.t() - self.st.sat.epoch
+            self.satLabel.setText('Valid elements, ' + '{:.2f} days old'.format(age))
+            self.st.log(1, 'Satellite changed: '+name)
 
     def tle_changed(self):
         self.st.log(1, 'sat_chg_cmd not yet implemented')
@@ -152,16 +155,35 @@ class UI(QtWidgets.QMainWindow,  Ui_MainWindow):
         self.indi_telescope_var.set(self.indi_telescope_options[0])
     def update_sat_list(self):
         """ when satellite list shell be updated"""
+
+
         # build & sort key list
         keys=[]
+        selected_satellite_idx = -1
         for key in self.st.satellites_tle:
             keys.append(str(key))
         keys.sort()
 
-        # update the combobox
+        # update the combobox items, also memorise the index of selected satellite
+        self.enable_satellite_changed = False
         self.satComboBox.clear()
+        i=0
         for key in keys:
             self.satComboBox.addItem(str(key))
+            if key==self.st.selected_satellite:
+                selected_satellite_idx = i
+            i=i+1
+        self.enable_satellite_changed = True
+
+        # define current item, modify the selected satellite if it has been remove from the list
+        if selected_satellite_idx >= 0:
+            self.satComboBox.setCurrentIndex(selected_satellite_idx)
+        else:
+            self.satComboBox.setCurrentIndex(0)
+            self.satellite_changed(keys[0])
+
+
+
 
 # 1sec update (time & sat location)
     def update_time(self):
