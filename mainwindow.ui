@@ -69,6 +69,11 @@
                <property name="enabled">
                 <bool>false</bool>
                </property>
+               <item>
+                <property name="text">
+                 <string/>
+                </property>
+               </item>
               </widget>
              </item>
              <item row="3" column="0">
@@ -110,7 +115,7 @@
            <item>
             <widget class="QLabel" name="indiLabel">
              <property name="text">
-              <string>Connected, telescope not OK</string>
+              <string/>
              </property>
             </widget>
            </item>

@@ -22,6 +22,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         # Load dynamic content
         self.hostEdit.setText(self.st.indi_server_ip)
         self.portEdit.setValue(self.st.indi_port)
+        self.indiLabel.setText("Not connected")
         self.trackingComboBox.setCurrentIndex(self.st.track_method)
         self.pGainSpinBox.setValue(self.st.p_gain)
         self.tauISpinBox.setValue(self.st.tau_i)
@@ -99,7 +100,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.st.log(1, 'indi_telescope_chg not yet implemented')
 
     def telescope_changed(self, driver):
-        self.st.log(1, 'indi_telescope_chg not yet implemented')
+        self.st.indiclient.set_telescope(driver)
 
     def joystick_changed(self, enabled):
         self.st.log(1, 'indi_joystick_chg not yet implemented')
@@ -133,24 +134,33 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
     # System callbacks
     def connected(self):
         """ when INDI connection is established"""
-        self.indi_connect_var.set("Disconnect")
-        self.indi_status_var.set("Connected but driver not configured")
+        self.connectButton.setText("Disconnect")
+        self.indiLabel.setText("Connected but driver not configured")
+        self.telescopeComboBox.setEnabled(True)
+        self.telescopeLabel_2.setEnabled(True)
+        self.joystickLabel_2.setEnabled(True)
 
     def disconnected(self):
         """ when INDI connection is ended"""
-        self.indi_connect_var.set("Connect")
-        self.indi_status_var.set("Not connected")
-        self.indi_telescope_options = ["None"]
-        self.indi_telescope_var.set(self.indi_telescope_options[0])
+        self.connectButton.setText("Connect")
+        self.indiLabel.setText("Not connected")
+        self.telescopeComboBox.clear()
+        self.telescopeComboBox.addItem("")
+        self.telescopeComboBox.setEnabled(False)
+        self.joystickCheckBox.setEnabled(False)
+        self.telescopeLabel_2.setEnabled(False)
+        self.joystickLabel_2.setEnabled(False)
+        self.joystickCheckBox.setChecked(False)
+
 
     def add_telescope(self, device_name):
         """ when INDI driver is detected"""
-        if self.indi_telescope_options[0] == "None":
-            self.indi_telescope_options[0] = device_name
-        else:
-            self.indi_telescope_options.append(device_name)
-        self.indi_telescope.config(items=self.indi_telescope_options)
-        self.indi_telescope_var.set(self.indi_telescope_options[0])
+        self.telescopeComboBox.addItem(device_name)
+
+
+    def add_joystick(self):
+        self.joystickCheckBox.setEnabled(True)
+        self.joystickCheckBox.setChecked(True)
 
     def update_sat_list(self):
         """ when satellite list shall be updated"""

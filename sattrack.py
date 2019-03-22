@@ -3,6 +3,7 @@ Author: Romain Fafet (farom57@gmail.com)
 """
 from skyfield.api import load, Topos
 import PyIndi
+import time
 
 
 class SatTrack(object):
@@ -49,6 +50,8 @@ class SatTrack(object):
         self.tau_d = 1
         self.max_rate = 200
         self.i_sat = 0.5
+
+        self.connection_timeout = 1
 
         # dynamic data
         self.ui = None
@@ -125,7 +128,7 @@ class SatTrack(object):
         self.observer_offset = self.ts.utc(year, month, day, hour, minute, second).tt - self.ts.now().tt
 
     def t_iso(self):
-        """ Current sofware time in iso format"""
+        """ Current software time in iso format"""
         tmp = self.ts.now().tt + self.observer_offset
         return self.ts.tt(jd=tmp).utc_iso()
 
@@ -150,7 +153,7 @@ class SatTrack(object):
         if self.ui is not None:
             self.ui.update_sat_list()
 
-    # INDIconnection
+    # INDI connection
     def connect(self):
         if self.is_connected():
             self.log(1, "Already connected")
@@ -191,16 +194,48 @@ class IndiClient(PyIndi.BaseClient):
     def __init__(self, st):
         super(IndiClient, self).__init__()
         self.st = st
+        self.telescope_name = None
+        self.telescope = None
+        self.telescope_prop = {
+            "CONNECTION": None,
+            "EQUATORIAL_EOD_COORD": None,
+            "ON_COORD_SET": None,
+            "TELESCOPE_MOTION_NS": None,
+            "TELESCOPE_MOTION_WE": None,
+            "TELESCOPE_TIMED_GUIDE_NS": None,
+            "TELESCOPE_TIMED_GUIDE_WE": None,
+            "TELESCOPE_CURRENT_RATE": None,
+            "TELESCOPE_SLEW_RATE": None,
+            "TELESCOPE_PIER_SIDE": None}
+        self.telescope_features = {
+            "minimal": False,
+            "move": False,
+            "timed": False,
+            "speed": False,
+            "pier": False,
+            "rate": False}
+        self.joystick = None
 
     def newDevice(self, d):
         self.st.log(2, "New device: " + d.getDeviceName())
-        self.st.ui.addTelescope(d.getDeviceName())
+
+        if d.getDeviceName() == "Joystick":
+            self.st.ui.add_joystick()
+            self.joystick = d
+        else:
+            self.st.ui.add_telescope(d.getDeviceName())
 
     def newProperty(self, p):
-        pass
+        if p.getDeviceName() == self.telescope_name:
+            if p.getName() in self.telescope_prop.keys():
+                self.telescope_prop[p.getName()] = p
+                self.update_telescope_features()
 
     def removeProperty(self, p):
-        pass
+        if p.getDeviceName() == self.telescope_name:
+            if p.getName() in self.telescope_prop.keys():
+                self.telescope_prop[p.getName()] = None
+                self.update_telescope_features()
 
     def newBLOB(self, bp):
         pass
@@ -227,6 +262,94 @@ class IndiClient(PyIndi.BaseClient):
         if self.st.ui is not None:
             self.st.ui.disconnected()
         self.st.log(0, "Connection lost")
+
+    def set_telescope(self, device_name):
+        """Configure the device as telescope (try to connect & check properties). Return True if successful"""
+        self.telescope_name = device_name
+        self.telescope = None
+        self.telescope_prop = {
+            "CONNECTION": None,
+            "EQUATORIAL_EOD_COORD": None,
+            "ON_COORD_SET": None,
+            "TELESCOPE_MOTION_NS": None,
+            "TELESCOPE_MOTION_WE": None,
+            "TELESCOPE_TIMED_GUIDE_NS": None,
+            "TELESCOPE_TIMED_GUIDE_WE": None,
+            "TELESCOPE_CURRENT_RATE": None,
+            "TELESCOPE_SLEW_RATE": None,
+            "TELESCOPE_PIER_SIDE": None}
+        self.telescope_features = {
+            "minimal": False,
+            "move": False,
+            "timed": False,
+            "speed": False,
+            "pier": False,
+            "rate": False}
+
+        self.telescope = self.getDevice(device_name)
+        if self.telescope is None:
+            self.st.log(0, "Error during driver connection: Driver not found: " + device_name)
+            return False
+
+        # Check existing properties (new ones will be detected later by newProperty())
+        for key in self.telescope_prop:
+            prop = self.telescope.getProperty(key)
+            if prop:
+                self.telescope_prop[key]=prop
+
+        t = 0
+        while self.telescope_prop["CONNECTION"] is None:
+            if t > self.st.connection_timeout:
+                self.st.log(0, "Error during driver connection: CONNECT property not found")
+                return False
+            time.sleep(0.05)
+            t = t + 0.05
+
+        if not (self.telescope.isConnected()):
+            self.telescope_prop["CONNECTION"].getSwitch()[0].s = PyIndi.ISS_ON
+            self.telescope_prop["CONNECTION"].getSwitch()[1].s = PyIndi.ISS_OFF
+            self.sendNewSwitch(self.telescope_prop["CONNECTION"].getSwitch())
+
+        self.update_telescope_features()
+
+        # Required set of properties:
+        # - Minimal: CONNECT, EQUATORIAL_EOD_COORD, ON_COORD_SET
+        # - Move: TELESCOPE_MOTION_NS, TELESCOPE_MOTION_WE
+        # - Timed move: TELESCOPE_TIMED_GUIDE_NS, TELESCOPE_TIMED_GUIDE_WE
+        # - Speed: TELESCOPE_CURRENT_RATE
+        # - Other: TELESCOPE_SLEW_RATE, TELESCOPE_PIER_SIDE
+
+        t = 0
+        while not(self.telescope_features["minimal"] & (self.telescope_features["move"] or self.telescope_features["timed"] or self.telescope_features["speed"])):
+            if t > self.st.connection_timeout:
+                self.st.log(0, "Error during driver connection: No control method available, Is \"" + device_name + "\" a telescope device ?")
+                return False
+            time.sleep(0.05)
+            t = t + 0.05
+
+        self.update_telescope_features()
+        self.st.log(2, device_name + " connected")
+        return True
+
+    def update_telescope_features(self):
+        telescope_requirements = {
+            "minimal": {"CONNECTION", "EQUATORIAL_EOD_COORD", "ON_COORD_SET"},
+            "move": {"TELESCOPE_MOTION_NS", "TELESCOPE_MOTION_WE"},
+            "timed": {"TELESCOPE_TIMED_GUIDE_NS", "TELESCOPE_TIMED_GUIDE_WE"},
+            "speed": {"TELESCOPE_CURRENT_RATE"},
+            "pier": {"TELESCOPE_PIER_SIDE"},
+            "rate": {"TELESCOPE_SLEW_RATE"}}
+        old = self.telescope_features
+
+        for feat in telescope_requirements:
+            satisfied = True
+            for req in telescope_requirements[feat]:
+                if self.telescope_prop[req] is None:
+                    satisfied = False
+            self.telescope_features[feat] = satisfied
+
+        if not (old == self.telescope_features) & (self.st.ui is not None):
+            self.st.ui.update_telescope_features(self.telescope_features)
 
 
 class CatalogItem(object):
