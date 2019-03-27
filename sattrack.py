@@ -88,8 +88,12 @@ class SatTrack(object):
 
     @observer_alt.setter
     def observer_alt(self, n_alt):
+        # A valueError will be raised by Topos in cas of incorrect arguments. In this case the error is transfered to
+        # the upper level without modifying_the property
+        self.obs = Topos(self._observer_lat, self._observer_lon, None, None, n_alt)
         self._observer_alt = n_alt
-        self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
+
+
 
     @property
     def observer_lat(self):
@@ -97,9 +101,10 @@ class SatTrack(object):
 
     @observer_lat.setter
     def observer_lat(self, n_lat):
+        # A valueError will be raised by Topos in cas of incorrect arguments. In this case the error is transfered to
+        # the upper level without modifying_the property
+        self.obs = Topos(n_lat, self._observer_lon, None, None, self._observer_alt)
         self._observer_lat = n_lat
-        self.obs = Topos(self._observer_lat, self._observer_lon, None, None,
-                         self._observer_alt)  # TODO: add error management
 
     @property
     def observer_lon(self):
@@ -107,8 +112,10 @@ class SatTrack(object):
 
     @observer_lon.setter
     def observer_lon(self, n_lon):
+        # A valueError will be raised by Topos in cas of incorrect arguments. In this case the error is transfered to
+        # the upper level without modifying_the property
+        self.obs = Topos(self._observer_lat, n_lon, None, None, self._observer_alt)
         self._observer_lon = n_lon
-        self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
 
     # Utility functions
     def sat_pos(self):
@@ -261,7 +268,6 @@ class IndiClient(PyIndi.BaseClient):
     def serverDisconnected(self, code):
         if self.st.ui is not None:
             self.st.ui.disconnected()
-        self.st.log(0, "Connection lost")
 
     def set_telescope(self, device_name):
         """Configure the device as telescope (try to connect & check properties). Return True if successful"""

@@ -35,6 +35,9 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.update_sat_list()
 
         # Slot connect to internal functions
+        self.hostEdit.textChanged.connect(self.connection_info_changed)
+        self.portEdit.valueChanged.connect(self.connection_info_changed)
+
         self.connectButton.clicked.connect(self.connect_clicked)
         self.telescopeComboBox.currentIndexChanged['QString'].connect(self.telescope_changed)
         self.joystickCheckBox.stateChanged.connect(self.joystick_changed)
@@ -92,6 +95,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.catdg.show_modal()
 
     # Values entered callbacks
+    def connection_info_changed(self):
+        self.st.indi_server_ip=self.hostEdit.text()
+        self.st.indi_port=self.portEdit.value()
+
     def timemode_changed(self, realtime):
         if realtime:
             self.st.observer_offset = 0
@@ -116,14 +123,13 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.st.log(1, 'sat_chg_cmd not yet implemented')
 
     def location_changed(self):
-        # try:
-        # self.st.observer_alt = self.obs_alt_var.get()
-        # self.st.observer_lat = self.obs_lat_var.get()
-        # self.st.observer_lon = self.obs_lon_var.get()
-        #    self.obs_loc_str.set("Valid location")
-        # except ValueError:
-        #    self.obs_loc_str.set("Invalid location")
-        self.st.log(1, 'not yet implemented')
+        try:
+            self.st.observer_alt = self.altitudeSpinBox.value()
+            self.st.observer_lat = self.latitudeEdit.text()
+            self.st.observer_lon = self.longitudeEdit.text()
+            self.locationLabel.setText("Valid location")
+        except ValueError as err:
+            self.locationLabel.setText("Invalid location:\n" + err.args[0])
 
     def trackmode_changed(self, mode):
         self.st.log(1, 'trackmode_changed not yet implemented')
@@ -139,9 +145,14 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.telescopeComboBox.setEnabled(True)
         self.telescopeLabel_2.setEnabled(True)
         self.joystickLabel_2.setEnabled(True)
+        self.hostEdit.setEnabled(False)
+        self.portEdit.setEnabled(False)
 
     def disconnected(self):
         """ when INDI connection is ended"""
+        self.telescopeComboBox.blockSignals(True)
+        self.joystickCheckBox.blockSignals(True)
+
         self.connectButton.setText("Connect")
         self.indiLabel.setText("Not connected")
         self.telescopeComboBox.clear()
@@ -151,6 +162,13 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.telescopeLabel_2.setEnabled(False)
         self.joystickLabel_2.setEnabled(False)
         self.joystickCheckBox.setChecked(False)
+        self.hostEdit.setEnabled(True)
+        self.portEdit.setEnabled(True)
+
+        self.joystickCheckBox.blockSignals(False)
+        self.telescopeComboBox.blockSignals(False)
+
+
 
 
     def add_telescope(self, device_name):
@@ -159,8 +177,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
 
     def add_joystick(self):
+        self.joystickCheckBox.blockSignals(True)
         self.joystickCheckBox.setEnabled(True)
         self.joystickCheckBox.setChecked(True)
+        self.joystickCheckBox.blockSignals(False)
 
     def update_sat_list(self):
         """ when satellite list shall be updated"""
