@@ -15,3 +15,10 @@ ui = UI(st)
 ui.show()
 app.exec_()
 # TODO: st.save()
+app.quit()
+
+
+
+
+
+

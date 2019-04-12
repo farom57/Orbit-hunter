@@ -6,7 +6,9 @@ from PyQt5 import QtCore, QtWidgets
 from mainwindow import Ui_MainWindow
 from timedialog import Ui_Timedialog
 from catalogdialog import Ui_Catalogdialog
-from threading import Timer
+from sattrack import Error
+
+
 
 
 class UI(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -14,7 +16,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def __init__(self, st):
         super(UI, self).__init__()
-        self.st = st
+        self.st = st # type: SatTrack
         self.st.setUI(self)
 
         self.setupUi(self)
@@ -73,8 +75,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.indi_telescope_options = ["None"]
 
         # timer to update the time:
-        self.timer = Timer(1., self.update_time)
-        self.timer.start()
+        self.startTimer(1000)
 
     # Buttons
     def connect_clicked(self):
@@ -84,7 +85,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
             self.st.connect()
 
     def track_clicked(self):
-        self.st.log(1, 'track_btn_cmd not yet implemented')
+        if not self.st.tracking:
+            self.st.start_tracking()
+        else:
+            self.st.stop_tracking()
 
     def settime_clicked(self):
         self.timedg = Timedialog(self.st)
@@ -120,7 +124,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
             self.st.log(1, 'Satellite changed: ' + name)
 
     def tle_changed(self):
-        self.st.log(1, 'sat_chg_cmd not yet implemented')
+        self.st.set_tle(self.tleEdit.toPlainText())
+        age = self.st.t() - self.st.sat.epoch
+        self.satLabel.setText('Valid elements, ' + '{:.2f} days old'.format(age))
+        self.st.log(1, 'Satellite changed')
 
     def location_changed(self):
         try:
@@ -168,8 +175,11 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.joystickCheckBox.blockSignals(False)
         self.telescopeComboBox.blockSignals(False)
 
+    def tracking_started(self):
+        self.trackButton.setText("Stop tracking")
 
-
+    def tracking_stopped(self):
+        self.trackButton.setText("Track")
 
     def add_telescope(self, device_name):
         """ when INDI driver is detected"""
@@ -210,11 +220,39 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
             self.satComboBox.setCurrentIndex(0)
             self.satellite_changed(keys[0])
 
-    # 1sec update (time & sat location)
-    def update_time(self):
+    # Update information panel every second time, sat location telescope location...)
+    def timerEvent(self, event):
+        # TODO: update when new number received instead of polling
+
+        # Time
         self.timeLabel.setText(self.st.t_iso())
-        self.timer = Timer(1., self.update_time)
-        self.timer.start()
+
+        # Satellite
+        sat_ra, sat_dec, sat_distance = self.st.sat_pos()
+        self.satRaLabel.setText(sat_ra.hstr())
+        self.satDecLabel.setText(sat_dec.dstr())
+        # TODO
+        #self.satAltLabel.setText(sat_alt.dstr())
+        #self.satAzLabel.setText(sat_az.dstr())
+        self.satDistLabel.setText("{0:8.0f}km".format(sat_distance.km))
+        #self.satShadowLabel.setText("N/A")
+
+        # Telescope
+        try:
+            tel_ra, tel_dec = self.st.telescope_pos()
+        except Error:
+            self.telRaLabel.setText("-")
+            self.telDecLabel.setText("-")
+            #self.telAltLabel.setText("-")
+            self.telAzLabel.setText("-")
+        else:
+            self.telRaLabel.setText(tel_ra.hstr())
+            self.telDecLabel.setText(tel_dec.dstr())
+            self.telAltLabel.setText("-")#TODO
+            self.telAzLabel.setText("-")#TODO
+
+
+
 
 
 class Timedialog(QtWidgets.QDialog, Ui_Timedialog):

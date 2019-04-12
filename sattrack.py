@@ -1,7 +1,8 @@
 """
 Author: Romain Fafet (farom57@gmail.com)
 """
-from skyfield.api import load, Topos
+from skyfield.api import load, Topos, Star, EarthSatellite
+from skyfield.units import Angle
 import PyIndi
 import time
 
@@ -48,7 +49,7 @@ class SatTrack(object):
         self.p_gain = 0.5
         self.tau_i = 3
         self.tau_d = 1
-        self.max_rate = 200
+        self.max_rate = 1  # deg/s
         self.i_sat = 0.5
 
         self.connection_timeout = 1
@@ -59,6 +60,7 @@ class SatTrack(object):
         self.ts = load.timescale()
         self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
         self.update_tle()
+        self.tracking = False
 
         self.sat = self.satellites_tle[self._selected_satellite]  # TODO: add error management
 
@@ -82,6 +84,11 @@ class SatTrack(object):
         else:
             self._selected_satellite = n_sat
 
+    def set_tle(self, tle):
+        lines = tle.strip().splitlines()
+        self.sat = EarthSatellite(lines[0], lines[1])
+        self._selected_satellite = "TLE"
+
     @property
     def observer_alt(self):
         return self._observer_alt
@@ -92,8 +99,6 @@ class SatTrack(object):
         # the upper level without modifying_the property
         self.obs = Topos(self._observer_lat, self._observer_lon, None, None, n_alt)
         self._observer_alt = n_alt
-
-
 
     @property
     def observer_lat(self):
@@ -118,16 +123,31 @@ class SatTrack(object):
         self._observer_lon = n_lon
 
     # Utility functions
-    def sat_pos(self):
-        """ Satellite position: ra, dec, alt, az, distance"""
+    def sat_pos(self, t=None):
+        """ Satellite position: ra, dec, distance"""
         diff = self.sat - self.obs
-        topocentric = diff.at(self.t())
-        alt, az, distance = topocentric.altaz()
-        ra, dec = topocentric.radec()
-        return ra, dec, alt, az, distance
+        if t is None:
+            t = self.t()
+        topocentric = diff.at(t)
+        ra, dec, distance = topocentric.radec()
+        return ra, dec, distance
+
+    def telescope_pos(self):
+        """ Telescope position: ra, dec """
+        if self.indiclient.telescope_features["minimal"]:
+            radec = self.indiclient.telescope.getNumber("EQUATORIAL_EOD_COORD")
+            star = Star(ra_hours=radec[0].value, dec_degrees=radec[1].value)
+            # alt, az = self.obs.at(self.t()).observe(star).apparent().altaz()
+            return star.ra, star.dec
+        else:
+            raise Error("Unable to get the coordinates from the telescope")
+
+    def radec2altaz(self, ra: Angle, dec: Angle):
+        # TODO: simplified version of skyfield "_to_altaz" function
+        return 0, 0
 
     def t(self):
-        """ Current sofware time"""
+        """ Current software time"""
         tmp = self.ts.now().tt + self.observer_offset
         return self.ts.tt(jd=tmp)
 
@@ -144,7 +164,7 @@ class SatTrack(object):
         print(text)
         # TODO add logs into ui
 
-    def update_tle(self, max_age=3):
+    def update_tle(self, max_age=0):
         """ Update satellite elements, only elements older than 'max_age' days are downloaded  """
         self.satellites_tle = dict()
         for catalog in self.catalogs:
@@ -182,19 +202,76 @@ class SatTrack(object):
             self.log(1, "Already disconnected")
             return None
 
+        if self.tracking:
+            self.stop_tracking()
+
         if not (self.indiclient.disconnectServer()):
             self.log(0, "Error during disconnection")
             return None
 
         if self.ui is not None:
             self.ui.disconnected()
-            self.log(2, "Disconnection successful")
+
+        self.log(2, "Disconnection successful")
 
     def is_connected(self):
         return self.indiclient.isServerConnected()
 
     def setUI(self, ui):
         self.ui = ui
+
+    # Tracking
+    def start_tracking(self):
+        # TODO
+        if not self.indiclient.telescope_features["minimal"]:
+            self.log(0, "Tracking cannot be started: no telescope connected")
+            return
+
+        self.tracking = True
+        if self.ui is not None:
+            self.ui.tracking_started()
+
+    def stop_tracking(self):
+        # TODO
+        self.tracking = False
+        self.indiclient.set_speed(0, 0)
+        if self.ui is not None:
+            self.ui.tracking_stopped()
+
+    def update_tracking(self, current_ra, current_dec):
+        # This procedure is called each time the telescope coordinates are updated
+        # TODO
+        if not self.tracking:
+            return
+
+        target_ra, target_dec, alt = self.sat_pos()
+        target_ra_1, target_dec_1, alt = self.sat_pos(self.ts.tt(jd=self.t().tt + 1. / 86400.)) # at t + 1s
+
+        # perform all calculations in deg
+        diff_ra = target_ra._degrees - current_ra * 15
+        diff_dec = target_dec._degrees - current_dec
+        target_speed_ra = target_ra_1._degrees - target_ra._degrees
+        target_speed_dec = target_dec_1._degrees - target_dec._degrees
+
+        speed_ra = self.p_gain * diff_ra + target_speed_ra
+        speed_dec = self.p_gain * diff_dec + target_speed_dec
+
+        self.log(3,
+                 "\ntime: {0}\ntarget:{1} / {2}\ncurrent: {3} / {4}\ndiff: {5} / {6}\ntarget speed: {7} / {8}\ncommand speec: {9} / {10}".format(
+                     self.t_iso(), target_ra, target_dec, Angle(hours=current_ra), Angle(degrees=current_dec),
+                     Angle(degrees=diff_ra), Angle(degrees=diff_dec), target_speed_ra, target_speed_dec, speed_ra,
+                     speed_dec))
+
+        if speed_ra > self.max_rate:
+            speed_ra = self.max_rate
+        if speed_dec > self.max_rate:
+            speed_dec = self.max_rate
+        if speed_ra < -self.max_rate:
+            speed_ra = -self.max_rate
+        if speed_dec < -self.max_rate:
+            speed_dec = -self.max_rate
+
+        self.indiclient.set_speed(speed_ra, speed_dec)
 
 
 class IndiClient(PyIndi.BaseClient):
@@ -251,7 +328,8 @@ class IndiClient(PyIndi.BaseClient):
         pass
 
     def newNumber(self, nvp):
-        pass
+        if nvp.device == self.telescope_name and nvp.name == "EQUATORIAL_EOD_COORD":
+            self.st.update_tracking(nvp[0].value, nvp[1].value)
 
     def newText(self, tvp):
         pass
@@ -297,11 +375,13 @@ class IndiClient(PyIndi.BaseClient):
             self.st.log(0, "Error during driver connection: Driver not found: " + device_name)
             return False
 
+        self.watchDevice(self.telescope_name)
+
         # Check existing properties (new ones will be detected later by newProperty())
         for key in self.telescope_prop:
             prop = self.telescope.getProperty(key)
             if prop:
-                self.telescope_prop[key]=prop
+                self.telescope_prop[key] = prop
 
         t = 0
         while self.telescope_prop["CONNECTION"] is None:
@@ -326,9 +406,12 @@ class IndiClient(PyIndi.BaseClient):
         # - Other: TELESCOPE_SLEW_RATE, TELESCOPE_PIER_SIDE
 
         t = 0
-        while not(self.telescope_features["minimal"] & (self.telescope_features["move"] or self.telescope_features["timed"] or self.telescope_features["speed"])):
+        while not (self.telescope_features["minimal"] & (
+                self.telescope_features["move"] or self.telescope_features["timed"] or self.telescope_features[
+            "speed"])):
             if t > self.st.connection_timeout:
-                self.st.log(0, "Error during driver connection: No control method available, Is \"" + device_name + "\" a telescope device ?")
+                self.st.log(0,
+                            "Error during driver connection: No control method available, Is \"" + device_name + "\" a telescope device ?")
                 return False
             time.sleep(0.05)
             t = t + 0.05
@@ -357,6 +440,31 @@ class IndiClient(PyIndi.BaseClient):
         if not (old == self.telescope_features) & (self.st.ui is not None):
             self.st.ui.update_telescope_features(self.telescope_features)
 
+    def set_speed(self, ra_speed: float, dec_speed: float):
+        """ send the command to change the speed of the telescope (in deg/s) """
+
+        if not self.telescope_features["speed"]:
+            raise Error("Variable motion rate not supported by {0}".format(self.telescope_name))
+
+
+
+        rate_prop = self.telescope.getNumber("TELESCOPE_CURRENT_RATE")
+
+        ra_speed = ra_speed /360 * 86164.1
+        dec_speed = dec_speed / 360 * 86164.1
+        if ra_speed > rate_prop[0].max:
+            ra_speed = rate_prop[0].max
+        if dec_speed > rate_prop[1].max:
+            dec_speed = rate_prop[1].max
+        if ra_speed < rate_prop[0].min:
+            ra_speed = rate_prop[0].min
+        if dec_speed < rate_prop[1].min:
+            dec_speed = rate_prop[1].min
+
+        rate_prop[0].value = ra_speed
+        rate_prop[1].value = dec_speed
+        self.sendNewNumber(rate_prop)
+
 
 class CatalogItem(object):
     """ Satellite catalog item """
@@ -365,3 +473,7 @@ class CatalogItem(object):
         self.name = name
         self.url = url
         self.active = active
+
+
+class Error(Exception):
+    pass
