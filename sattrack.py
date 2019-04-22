@@ -3,6 +3,7 @@ Author: Romain Fafet (farom57@gmail.com)
 """
 from skyfield.api import load, Topos, Star, EarthSatellite
 from skyfield.units import Angle
+from numpy import cos, sin, arccos, arcsin, arctan2, pi, einsum
 import PyIndi
 import time
 
@@ -142,9 +143,16 @@ class SatTrack(object):
         else:
             raise Error("Unable to get the coordinates from the telescope")
 
-    def radec2altaz(self, ra: Angle, dec: Angle):
-        # TODO: simplified version of skyfield "_to_altaz" function
-        return 0, 0
+    def radec2altaz(self, ra, dec, t=None):
+        if t is None:
+            t = self.t()
+        rot = self.obs._altaz_rotation(t)
+        cosdec = cos(dec)
+        radec = [cosdec*cos(ra),cosdec*sin(ra),sin(dec)]
+        altaz = einsum("ij,j->i",rot,radec)
+        alt = arccos(altaz[2])
+        az = arctan2(altaz[1],altaz[0])
+        return alt, az
 
     def t(self):
         """ Current software time"""
