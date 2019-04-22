@@ -162,7 +162,15 @@ class SatTrack(object):
     def log(self, level, text):
         """ level: 0 for error, 1 for warning, 2 for common messages, 3 for extended logging """
         print(text)
-        # TODO add logs into ui
+        if self.ui is not None:
+            if level == 0:
+                self.ui.logBrowser.append("<font color=\"Red\">{0} - ERROR: {1}</font>".format(self.t_iso(), text))
+            elif level == 1:
+                self.ui.logBrowser.append("<font color=\"Orange\">{0} - WARNING: {1}</font>".format(self.t_iso(), text))
+            elif level == 2:
+                self.ui.logBrowser.append("<font color=\"Black\">{0} - Info: {1}</font>".format(self.t_iso(), text))
+            else:
+                self.ui.logBrowser.append("<font color=\"Blue\">{0} - Debug: {1}</font>".format(self.t_iso(), text))
 
     def update_tle(self, max_age=3):
         """ Update satellite elements, only elements older than 'max_age' days are downloaded  """
