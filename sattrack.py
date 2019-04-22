@@ -164,7 +164,7 @@ class SatTrack(object):
         print(text)
         # TODO add logs into ui
 
-    def update_tle(self, max_age=0):
+    def update_tle(self, max_age=3):
         """ Update satellite elements, only elements older than 'max_age' days are downloaded  """
         self.satellites_tle = dict()
         for catalog in self.catalogs:
