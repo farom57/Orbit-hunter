@@ -150,9 +150,9 @@ class SatTrack(object):
         cosdec = cos(dec)
         radec = [cosdec*cos(ra),cosdec*sin(ra),sin(dec)]
         altaz = einsum("ij,j->i",rot,radec)
-        alt = arccos(altaz[2])
+        alt = arcsin(altaz[2])
         az = arctan2(altaz[1],altaz[0])
-        return alt, az
+        return alt,az
 
     def t(self):
         """ Current software time"""
