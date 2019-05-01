@@ -122,6 +122,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
             age = self.st.t() - self.st.sat.epoch
             self.satLabel.setText('Valid elements, ' + '{:.2f} days old'.format(age))
             self.st.log(1, 'Satellite changed: ' + name)
+            self.update_pass(self.st.next_pass(self.st.t()))
 
     def tle_changed(self):
         self.st.set_tle(self.tleEdit.toPlainText())
@@ -143,6 +144,39 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def trackparam_changed(self, dummy):
         self.st.log(1, 'trackparam_changed not yet implemented')
+
+    def update_pass(self, satellite_pass):
+        if(satellite_pass[0][0] is not None):
+            self.rise_time_lbl.setText(satellite_pass[0][0].utc_iso())
+            self.rise_az_lbl.setText(str(satellite_pass[2][0]))
+        else:
+            self.rise_time_lbl.setText("-")
+            self.rise_az_lbl.setText("-")
+
+        if (satellite_pass[0][1] is not None):
+            self.culmination_time_lbl.setText(satellite_pass[0][1].utc_iso())
+            self.culmination_alt_lbl.setText(str(satellite_pass[1][1]))
+            self.culmination_az_lbl.setText(str(satellite_pass[2][1]))
+        else:
+            self.culmination_time_lbl.setText("-")
+            self.culmination_alt_lbl.setText("-")
+            self.culmination_az_lbl.setText("-")
+
+        if (satellite_pass[0][2] is not None):
+            self.meridian_time_lbl.setText(satellite_pass[0][2].utc_iso())
+            self.meridian_alt_lbl.setText(str(satellite_pass[1][2]))
+            self.meridian_az_lbl.setText(str(satellite_pass[2][2]))
+        else:
+            self.meridian_time_lbl.setText("-")
+            self.meridian_alt_lbl.setText("-")
+            self.meridian_az_lbl.setText("-")
+
+        if (satellite_pass[0][3] is not None):
+            self.set_time_lbl.setText(satellite_pass[0][3].utc_iso())
+            self.set_az_lbl.setText(str(satellite_pass[2][3]))
+        else:
+            self.set_time_lbl.setText("-")
+            self.set_az_lbl.setText("-")
 
     # System callbacks
     def connected(self):
