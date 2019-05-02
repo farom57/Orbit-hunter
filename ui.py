@@ -21,6 +21,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.setupUi(self)
 
+        # Other init
+        self.indi_telescope_options = ["None"]
+
+
         # Load dynamic content
         self.hostEdit.setText(self.st.indi_server_ip)
         self.portEdit.setValue(self.st.indi_port)
@@ -35,6 +39,8 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.longitudeEdit.setText(self.st.observer_lon)
         self.altitudeSpinBox.setValue(self.st.observer_alt)
         self.update_sat_list()
+        self.current_pass = self.current_pass=self.st.next_pass(self.st.t())
+        self.update_pass()
 
         # Slot connect to internal functions
         self.hostEdit.textChanged.connect(self.connection_info_changed)
@@ -65,14 +71,18 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.catalogConfigButton.clicked.connect(self.catconfig_clicked)
         self.tleEdit.textChanged.connect(self.tle_changed)
 
+        self.prev_pass_btn.clicked.connect(self.prevpass_clicked)
+        self.next_pass_btn.clicked.connect(self.nextpass_clicked)
+        self.goto_rise_btn.clicked.connect(self.gotorise_clicked)
+        self.goto_meridian_btn.clicked.connect(self.gotomeridian_clicked)
+
         # Additional slot connection to grey out widget depending on optionbox
         self.realTimeButton.toggled['bool'].connect(self.setTimeButton.setDisabled)
         self.catalogSatButton.toggled['bool'].connect(self.satComboBox.setEnabled)
         self.catalogSatButton.toggled['bool'].connect(self.catalogConfigButton.setEnabled)
         self.catalogSatButton.toggled['bool'].connect(self.tleEdit.setDisabled)
 
-        # Other init
-        self.indi_telescope_options = ["None"]
+
 
         # timer to update the time:
         self.startTimer(1000)
@@ -98,6 +108,28 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.catdg = Catalogdialog(self.st)
         self.catdg.show_modal()
 
+    def nextpass_clicked(self):
+        if self.current_pass[0][3] is not None:
+            starting = self.current_pass[0][3]  # set date of the current pass
+        else:
+            starting = self.st.ts.tt(jd=self.current_pass[0][5]+1)  # +24h if no current pass
+        self.current_pass = self.st.next_pass(starting, backward=False)
+        self.update_pass()
+
+    def prevpass_clicked(self):
+        if self.current_pass[0][0] is not None:
+            starting = self.current_pass[0][0]  # rise date of the current pass
+        else:
+            starting = self.st.ts.tt(jd=self.current_pass[0][5]-1)  # -24h if no current pass
+        self.current_pass = self.st.next_pass(starting, backward=True)
+        self.update_pass()
+
+    def gotorise_clicked(self):
+        self.st.log(1, 'gotorise not yet implemented')
+
+    def gotomeridian_clicked(self):
+        self.st.log(1, 'gotomeridian not yet implemented')
+
     # Values entered callbacks
     def connection_info_changed(self):
         self.st.indi_server_ip=self.hostEdit.text()
@@ -122,7 +154,8 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
             age = self.st.t() - self.st.sat.epoch
             self.satLabel.setText('Valid elements, ' + '{:.2f} days old'.format(age))
             self.st.log(1, 'Satellite changed: ' + name)
-            self.update_pass(self.st.next_pass(self.st.t()))
+            self.current_pass=self.st.next_pass(self.st.t())
+            self.update_pass()
 
     def tle_changed(self):
         self.st.set_tle(self.tleEdit.toPlainText())
@@ -145,38 +178,8 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
     def trackparam_changed(self, dummy):
         self.st.log(1, 'trackparam_changed not yet implemented')
 
-    def update_pass(self, satellite_pass):
-        if(satellite_pass[0][0] is not None):
-            self.rise_time_lbl.setText(satellite_pass[0][0].utc_iso())
-            self.rise_az_lbl.setText(str(satellite_pass[2][0]))
-        else:
-            self.rise_time_lbl.setText("-")
-            self.rise_az_lbl.setText("-")
 
-        if (satellite_pass[0][1] is not None):
-            self.culmination_time_lbl.setText(satellite_pass[0][1].utc_iso())
-            self.culmination_alt_lbl.setText(str(satellite_pass[1][1]))
-            self.culmination_az_lbl.setText(str(satellite_pass[2][1]))
-        else:
-            self.culmination_time_lbl.setText("-")
-            self.culmination_alt_lbl.setText("-")
-            self.culmination_az_lbl.setText("-")
 
-        if (satellite_pass[0][2] is not None):
-            self.meridian_time_lbl.setText(satellite_pass[0][2].utc_iso())
-            self.meridian_alt_lbl.setText(str(satellite_pass[1][2]))
-            self.meridian_az_lbl.setText(str(satellite_pass[2][2]))
-        else:
-            self.meridian_time_lbl.setText("-")
-            self.meridian_alt_lbl.setText("-")
-            self.meridian_az_lbl.setText("-")
-
-        if (satellite_pass[0][3] is not None):
-            self.set_time_lbl.setText(satellite_pass[0][3].utc_iso())
-            self.set_az_lbl.setText(str(satellite_pass[2][3]))
-        else:
-            self.set_time_lbl.setText("-")
-            self.set_az_lbl.setText("-")
 
     # System callbacks
     def connected(self):
@@ -253,6 +256,39 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             self.satComboBox.setCurrentIndex(0)
             self.satellite_changed(keys[0])
+
+    def update_pass(self):
+        if(self.current_pass[0][0] is not None):
+            self.rise_time_lbl.setText(self.current_pass[0][0].utc_iso())
+            self.rise_az_lbl.setText(str(self.current_pass[2][0]))
+        else:
+            self.rise_time_lbl.setText("-")
+            self.rise_az_lbl.setText("-")
+
+        if (self.current_pass[0][1] is not None):
+            self.culmination_time_lbl.setText(self.current_pass[0][1].utc_iso())
+            self.culmination_alt_lbl.setText(str(self.current_pass[1][1]))
+            self.culmination_az_lbl.setText(str(self.current_pass[2][1]))
+        else:
+            self.culmination_time_lbl.setText("-")
+            self.culmination_alt_lbl.setText("-")
+            self.culmination_az_lbl.setText("-")
+
+        if (self.current_pass[0][2] is not None):
+            self.meridian_time_lbl.setText(self.current_pass[0][2].utc_iso())
+            self.meridian_alt_lbl.setText(str(self.current_pass[1][2]))
+            self.meridian_az_lbl.setText(str(self.current_pass[2][2]))
+        else:
+            self.meridian_time_lbl.setText("-")
+            self.meridian_alt_lbl.setText("-")
+            self.meridian_az_lbl.setText("-")
+
+        if (self.current_pass[0][3] is not None):
+            self.set_time_lbl.setText(self.current_pass[0][3].utc_iso())
+            self.set_az_lbl.setText(str(self.current_pass[2][3]))
+        else:
+            self.set_time_lbl.setText("-")
+            self.set_az_lbl.setText("-")
 
     # Update information panel every second time, sat location telescope location...)
     def timerEvent(self, event):

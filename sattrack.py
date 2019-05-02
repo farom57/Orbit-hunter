@@ -181,7 +181,7 @@ class SatTrack(object):
                 self.ui.logBrowser.append("<font color=\"Black\">{0} - Info: {1}</font>".format(self.t_iso(), text))
             else:
                 pass
-                #self.ui.logBrowser.append("<font color=\"Blue\">{0} - Debug: {1}</font>".format(self.t_iso(), text))
+                # self.ui.logBrowser.append("<font color=\"Blue\">{0} - Debug: {1}</font>".format(self.t_iso(), text))
 
     def update_tle(self, max_age=3):
         """ Update satellite elements, only elements older than 'max_age' days are downloaded  """
@@ -200,8 +200,17 @@ class SatTrack(object):
             self.ui.update_sat_list()
 
     # next pass prediction
-    def next_pass(self, t0):
-        t0=t0.tt
+    def next_pass(self, t0, backward=False):
+        """
+        Predict the next pass. Return a tuple containing the dates and alt az angles of the rise, culmination, meridian crossing and set, or None if the respective event does no happen.
+        Return ((None,None, None, None, t0),(None,None, None, None),(None,None, None, None)) if no pass is found.
+
+        :param t0: time to start the search
+        :param backward: backward = True will search the previous pass
+        :return: ((t_rise, t_culmination, t_meridian, t_set, t0), (alt_rise, alt_culmination, alt_meridian, alt_set), (az_rise, az_culmination, az_meridian, az_set))
+        """
+        t0 = t0.tt
+
         def alt_t(dt):
             tjd = t0 + dt / 86400
             ra, dec, dist = self.sat_pos(t=self.ts.tt(jd=tjd))
@@ -214,6 +223,7 @@ class SatTrack(object):
             alt, az = self.radec2altaz(ra.radians, dec.radians, t=self.ts.tt(jd=tjd))
             return az
 
+        dir = -1 if backward else 1
         step = 60 * 20  # less than 1/4 of orbit
         small_step = 30  # few deg
         smaller_step = 1  # time resolution
@@ -224,58 +234,56 @@ class SatTrack(object):
         dt_meridian = None
         dt_culmination = None
 
-
         while True:
             # Ascending / descending orbit coarse detection
             alt0 = alt_t(dt0)
-            alt1 = alt_t(dt0 + step)
-            while alt1 < alt0 and dt0 < 86400:
+            alt1 = alt_t(dt0 + step * dir)
+            while alt1 < alt0  and dt0 * dir < 86400 and alt1 < 0:
                 self.log(3, "Phase 1: Decreasing at dt0={0}, alt0={1}, alt1={2}".format(dt0, alt0, alt1))
                 alt0 = alt1
-                dt0 = dt0 + step
-                alt1 = alt_t(dt0 + step)
+                dt0 = dt0 + step * dir
+                alt1 = alt_t(dt0 + step * dir)
 
-            while alt1 >= alt0 and dt0 < 86400:
+            while alt1 >= alt0 and dt0 * dir < 86400:
                 self.log(3, "Phase 1: Increasing at dt0={0}, alt0={1}, alt1={2}".format(dt0, alt0, alt1))
                 alt0 = alt1
-                dt0 = dt0 + step
-                alt1 = alt_t(dt0 + step)
+                dt0 = dt0 + step * dir
+                alt1 = alt_t(dt0 + step * dir)
 
-            if dt0 > 86400:
+            if dt0 * dir > 86400 and alt1 < 0:
                 self.log(2, "no other pass for today")
-                return ((None,None, None, None),(None,None, None, None),(None,None, None, None))
+                return ((None, None, None, None, t0), (None, None, None, None), (None, None, None, None))
 
-            self.log(3, "Phase 1: Maximum between dt0={0} and {1}".format(dt0 - step, dt0 + step))
-            dt0 = dt0 - step
+            self.log(3, "Phase 1: Maximum between dt0={0} and {1}".format(dt0 - step * dir, dt0 + step * dir))
+            dt0 = dt0 - step * dir
             alt0 = alt_t(dt0)
-            alt1 = alt_t(dt0 + small_step)
+            alt1 = alt_t(dt0 + small_step * dir)
 
             # Refining the maximum altitude
-            while alt1 >= alt0 and alt1 < 10 and dt0 < 86400:
+            while alt1 >= alt0 and alt1 < 10 and dt0 * dir < 86400:
                 self.log(3, "Phase 2: Increasing at dt0={0}, alt0={1}, alt1={2}".format(dt0, alt0, alt1))
                 alt0 = alt1
-                dt0 = dt0 + small_step
-                alt1 = alt_t(dt0 + small_step)
+                dt0 = dt0 + small_step * dir
+                alt1 = alt_t(dt0 + small_step * dir)
 
             if (alt1 < 0):
-                if dt0 < 86400:
+                if dt0 * dir < 86400:
                     continue  # restart the search for the following orbit
                 else:
                     self.log(2, "no pass found")
-                    return ((None,None, None, None),(None,None, None, None),(None,None, None, None))
+                    return ((None, None, None, None, t0), (None, None, None, None), (None, None, None, None))
             else:
                 # Refining a 2nd time the maximum altitude to get the date
-                alt1 = alt_t(dt0 + smaller_step)
+                alt1 = alt_t(dt0 + smaller_step * dir)
                 while alt1 >= alt0:
-                    if dt0 > 86400:
+                    if dt0 * dir > 86400:
                         self.log(3, "no culmination today")
-                        return ((None,None, None, None),(None,None, None, None),(None,None, None, None))
+                        return ((None, None, None, None, t0), (None, None, None, None), (None, None, None, None))
                     self.log(3, "Phase 3: Increasing at dt0={0}, alt0={1}, alt1={2}".format(dt0, alt0, alt1))
                     alt0 = alt1
-                    dt0 = dt0 + smaller_step
-                    alt1 = alt_t(dt0 + smaller_step)
+                    dt0 = dt0 + smaller_step * dir
+                    alt1 = alt_t(dt0 + smaller_step * dir)
                 dt_culmination = dt0
-
 
                 # refining rise and set date by dichotomy
                 # set
@@ -335,7 +343,6 @@ class SatTrack(object):
                                                                                                               alt1))
                     dt_rise = dt0
 
-
                 # meridian
                 if (dt_rise is not None) and (dt_set is not None):
                     dt0 = dt_rise
@@ -369,21 +376,18 @@ class SatTrack(object):
                                          az1))
                         dt_meridian = dt0
 
-
-
-
                 if dt_rise is not None:
-                    t_rise = self.ts.tt(jd=t0 + dt_rise/86400)
-                    alt_rise=Angle(radians=alt_t(dt_rise), preference="degrees")
+                    t_rise = self.ts.tt(jd=t0 + dt_rise / 86400)
+                    alt_rise = Angle(radians=alt_t(dt_rise), preference="degrees")
                     az_rise = Angle(radians=az_t(dt_rise), preference="degrees")
                 else:
-                    t_rise=None
-                    alt_rise=None
-                    az_rise=None
+                    t_rise = None
+                    alt_rise = None
+                    az_rise = None
 
                 if dt_culmination is not None:
-                    t_culmination = self.ts.tt(jd=t0 + dt_culmination/86400)
-                    alt_culmination=Angle(radians=alt_t(dt_culmination), preference="degrees")
+                    t_culmination = self.ts.tt(jd=t0 + dt_culmination / 86400)
+                    alt_culmination = Angle(radians=alt_t(dt_culmination), preference="degrees")
                     az_culmination = Angle(radians=az_t(dt_culmination), preference="degrees")
                 else:
                     t_culmination = None
@@ -391,8 +395,8 @@ class SatTrack(object):
                     az_culmination = None
 
                 if dt_meridian is not None:
-                    t_meridian = self.ts.tt(jd=t0 + dt_meridian/86400)
-                    alt_meridian=Angle(radians=alt_t(dt_meridian), preference="degrees")
+                    t_meridian = self.ts.tt(jd=t0 + dt_meridian / 86400)
+                    alt_meridian = Angle(radians=alt_t(dt_meridian), preference="degrees")
                     az_meridian = Angle(radians=az_t(dt_meridian), preference="degrees")
                 else:
                     t_meridian = None
@@ -400,8 +404,8 @@ class SatTrack(object):
                     az_meridian = None
 
                 if dt_set is not None:
-                    t_set = self.ts.tt(jd=t0 + dt_set/86400)
-                    alt_set=Angle(radians=alt_t(dt_set), preference="degrees")
+                    t_set = self.ts.tt(jd=t0 + dt_set / 86400)
+                    alt_set = Angle(radians=alt_t(dt_set), preference="degrees")
                     az_set = Angle(radians=az_t(dt_set), preference="degrees")
                 else:
                     t_set = None
@@ -414,8 +418,8 @@ class SatTrack(object):
                              az_culmination,
                              alt_culmination, dt_set, az_set))
 
-                return ((t_rise, t_culmination, t_meridian, t_set), (alt_rise, alt_culmination, alt_meridian, alt_set), (az_rise, az_culmination, az_meridian, az_set))
-
+                return ((t_rise, t_culmination, t_meridian, t_set, t0), (alt_rise, alt_culmination, alt_meridian, alt_set),
+                        (az_rise, az_culmination, az_meridian, az_set))
 
     # INDI connection
     def connect(self):
