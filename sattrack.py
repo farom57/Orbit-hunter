@@ -2,8 +2,9 @@
 Author: Romain Fafet (farom57@gmail.com)
 """
 from skyfield.api import load, Topos, Star, EarthSatellite
+from skyfield.positionlib import Geocentric, ICRF
 from skyfield.units import Angle
-from numpy import cos, sin, arccos, arcsin, arctan2, pi, einsum
+from numpy import cos, sin, arccos, arcsin, arctan2, pi, einsum, sqrt
 import PyIndi
 import time
 
@@ -62,6 +63,9 @@ class SatTrack(object):
         self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
         self.update_tle()
         self.tracking = False
+        planets = load('de421.bsp')
+        self.earth = planets['earth']
+        self.sun = planets['sun']
 
         self.sat = self.satellites_tle[self._selected_satellite]  # TODO: add error management
 
@@ -133,6 +137,30 @@ class SatTrack(object):
         ra, dec, distance = topocentric.radec()
         return ra, dec, distance
 
+    def scalar_product(self, a, b):
+        return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]
+
+    def illuminated(self, t=None):
+        """ return false if the satellite is in shadow """
+        if t is None:
+            t = self.t()
+
+        # projection of the earth center on the ray between the sun and the satellite
+        earth_sat_vect = (self.sat).at(t).position.au
+        sun_sat_vect = (self.sat - (self.sun - self.earth)).at(t).position.au
+        product = self.scalar_product(earth_sat_vect,sun_sat_vect)
+
+        if product < 0:     # The satellite is in front of the earth
+            return True
+        else:               # The satellite is after the earth, let's check if the ray is underground
+            sun_sat_vect = sun_sat_vect / sqrt(self.scalar_product(sun_sat_vect,sun_sat_vect)) # normalize
+            earth_projection_vect = earth_sat_vect - self.scalar_product(earth_sat_vect,sun_sat_vect) * sun_sat_vect
+            earth_projection = Geocentric(position_au=earth_projection_vect,center=399,t=t)
+            return earth_projection.subpoint().elevation.m>0.
+
+    def in_shadow(self, t=None):
+        return not self.illuminated(t)
+
     def telescope_pos(self):
         """ Telescope position: ra, dec """
         if self.indiclient.telescope_features["minimal"]:
@@ -144,6 +172,13 @@ class SatTrack(object):
             raise Error("Unable to get the coordinates from the telescope")
 
     def radec2altaz(self, ra, dec, t=None):
+        """
+        Convert ra,dec in alt,az
+        :param ra: ra in rad
+        :param dec: dec in rad
+        :param t: Skyfield Time object, use current time if omitted
+        :return: alt, az in rad
+        """
         if t is None:
             t = self.t()
         rot = self.obs._altaz_rotation(t)
@@ -153,6 +188,17 @@ class SatTrack(object):
         alt = arcsin(altaz[2])
         az = arctan2(altaz[1], altaz[0])
         return alt, az
+
+    def radec2altaz_2(self, ra, dec, t=None):
+        """
+        Convert ra,dec in alt,az
+        :param ra: ra as skyfield Angle object
+        :param dec: dec as skyfield Angle object
+        :param t: Skyfield Time object, use current time if omitted
+        :return: alt, az as skyfield Angle object
+        """
+        alt,az=self.radec2altaz(ra.radians, dec.radians, t)
+        return Angle(radians=alt, preference="degrees"), Angle(radians=az, preference="degrees")
 
     def t(self):
         """ Current software time"""

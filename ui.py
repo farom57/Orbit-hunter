@@ -292,34 +292,34 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
     # Update information panel every second time, sat location telescope location...)
     def timerEvent(self, event):
-        # TODO: update when new number received instead of polling
 
         # Time
         self.timeLabel.setText(self.st.t_iso())
 
         # Satellite
         sat_ra, sat_dec, sat_distance = self.st.sat_pos()
+        sat_alt, sat_az = self.st.radec2altaz_2(sat_ra, sat_dec)
         self.satRaLabel.setText(sat_ra.hstr())
         self.satDecLabel.setText(sat_dec.dstr())
-        # TODO
-        #self.satAltLabel.setText(sat_alt.dstr())
-        #self.satAzLabel.setText(sat_az.dstr())
+        self.satAltLabel.setText(sat_alt.dstr())
+        self.satAzLabel.setText(sat_az.dstr())
         self.satDistLabel.setText("{0:8.0f}km".format(sat_distance.km))
-        #self.satShadowLabel.setText("N/A")
+        self.satShadowLabel.setText(str(self.st.in_shadow()))
 
         # Telescope
         try:
             tel_ra, tel_dec = self.st.telescope_pos()
+            tel_alt, tel_az = self.st.radec2altaz_2(tel_ra, tel_dec)
         except Error:
             self.telRaLabel.setText("-")
             self.telDecLabel.setText("-")
-            #self.telAltLabel.setText("-")
+            self.telAltLabel.setText("-")
             self.telAzLabel.setText("-")
         else:
             self.telRaLabel.setText(tel_ra.hstr())
             self.telDecLabel.setText(tel_dec.dstr())
-            self.telAltLabel.setText("-")#TODO
-            self.telAzLabel.setText("-")#TODO
+            self.telAltLabel.setText(tel_alt.dstr())
+            self.telAzLabel.setText(tel_az.dstr())
 
 
 
