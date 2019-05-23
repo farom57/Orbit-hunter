@@ -6,6 +6,7 @@ from PyQt5 import QtCore, QtWidgets
 from mainwindow import Ui_MainWindow
 from timedialog import Ui_Timedialog
 from catalogdialog import Ui_Catalogdialog
+from joystickdialog import Ui_Joystickdialog
 from sattrack import Error
 
 
@@ -48,7 +49,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.connectButton.clicked.connect(self.connect_clicked)
         self.telescopeComboBox.currentIndexChanged['QString'].connect(self.telescope_changed)
-        self.joystickCheckBox.stateChanged.connect(self.joystick_changed)
+        self.joystick_btn.clicked.connect(self.joystickconfig_clicked)
 
         #self.trackingComboBox.currentIndexChanged['QString'].connect(self.trackmode_changed)
         self.pGainSpinBox.valueChanged['double'].connect(self.trackparam_changed)
@@ -108,6 +109,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.catdg = Catalogdialog(self.st)
         self.catdg.show_modal()
 
+    def joystickconfig_clicked(self):
+        self.joydg = Joystickdialog(self.st)
+        self.joydg.show_modal()
+
     def nextpass_clicked(self):
         if self.current_pass[0][3] is not None:
             starting = self.current_pass[0][3]  # set date of the current pass
@@ -145,8 +150,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
     def telescope_changed(self, driver):
         self.st.indiclient.set_telescope(driver)
 
-    def joystick_changed(self, enabled):
-        self.st.log(1, 'indi_joystick_chg not yet implemented')
+
 
     def satellite_changed(self, name):
         if self.enable_satellite_changed:  # can be disabled during combobox update after new catalog selection
@@ -224,10 +228,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
 
     def add_joystick(self):
-        self.joystickCheckBox.blockSignals(True)
-        self.joystickCheckBox.setEnabled(True)
-        self.joystickCheckBox.setChecked(True)
-        self.joystickCheckBox.blockSignals(False)
+        self.joystick_btn.blockSignals(True)
+        self.joystick_btn.setEnabled(True)
+        self.joystick_btn.setChecked(True)
+        self.joystick_btn.blockSignals(False)
 
     def update_sat_list(self):
         """ when satellite list shall be updated"""
@@ -396,3 +400,36 @@ class Catalogdialog(QtWidgets.QDialog, Ui_Catalogdialog):
     def show_modal(self):
         self.setModal(True)
         self.show()
+
+class Joystickdialog(QtWidgets.QDialog, Ui_Joystickdialog):
+    """ Joystick configuration dialog """
+
+    def __init__(self, st):
+        super(Joystickdialog, self).__init__()
+        self.st = st
+        self.joystick_axes_n = self.st.indiclient.joystick_axes.nnp
+        self.st.indiclient.joystick_conf_ui=self
+
+        # UI setup
+        self.setupUi(self, self.joystick_axes_n)
+
+        #self.buttonBox.accepted.connect(self.???)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+
+
+
+    def __del__(self):
+        self.st.indiclient.joystick_conf_ui = None
+
+    def timerEvent(self, a0: 'QTimerEvent') -> None:
+        for i in range(self.joystick_axes_n):
+            self.progressBar[i].setValue(int(self.st.indiclient.joystick_axes[i].value))
+
+    def show_modal(self):
+        self.setModal(True)
+        self.show()
+
+        # timer to update the input values:
+        self.startTimer(40)
+

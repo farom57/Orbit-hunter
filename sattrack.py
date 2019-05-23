@@ -227,6 +227,7 @@ class SatTrack(object):
                 self.ui.logBrowser.append("<font color=\"Black\">{0} - Info: {1}</font>".format(self.t_iso(), text))
             else:
                 pass
+                print("Debug: "+text)
                 # self.ui.logBrowser.append("<font color=\"Blue\">{0} - Debug: {1}</font>".format(self.t_iso(), text))
 
     def update_tle(self, max_age=3):
@@ -586,12 +587,12 @@ class IndiClient(PyIndi.BaseClient):
             "pier": False,
             "rate": False}
         self.joystick = None
+        self.joystick_axes = None
 
     def newDevice(self, d):
         self.st.log(2, "New device: " + d.getDeviceName())
 
         if d.getDeviceName() == "Joystick":
-            self.st.ui.add_joystick()
             self.joystick = d
         else:
             self.st.ui.add_telescope(d.getDeviceName())
@@ -601,6 +602,17 @@ class IndiClient(PyIndi.BaseClient):
             if p.getName() in self.telescope_prop.keys():
                 self.telescope_prop[p.getName()] = p
                 self.update_telescope_features()
+
+        if p.getDeviceName() == "Joystick":
+            if p.getName() == "CONNECTION":
+                # try to connect
+                p.getSwitch()[0].s = PyIndi.ISS_ON
+                p.getSwitch()[1].s = PyIndi.ISS_OFF
+                self.sendNewSwitch(p.getSwitch())
+            elif p.getName() == "JOYSTICK_AXES":
+                self.joystick_axes = p.getNumber()
+                self.st.ui.add_joystick()
+
 
     def removeProperty(self, p):
         if p.getDeviceName() == self.telescope_name:

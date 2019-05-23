@@ -49,7 +49,7 @@
            <x>0</x>
            <y>0</y>
            <width>341</width>
-           <height>1358</height>
+           <height>1366</height>
           </rect>
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_12">
@@ -114,13 +114,6 @@
                  </property>
                 </widget>
                </item>
-               <item row="3" column="1">
-                <widget class="QCheckBox" name="joystickCheckBox">
-                 <property name="enabled">
-                  <bool>false</bool>
-                 </property>
-                </widget>
-               </item>
                <item row="1" column="1">
                 <widget class="QSpinBox" name="portEdit">
                  <property name="maximum">
@@ -128,6 +121,16 @@
                  </property>
                  <property name="value">
                   <number>7624</number>
+                 </property>
+                </widget>
+               </item>
+               <item row="3" column="1">
+                <widget class="QPushButton" name="joystick_btn">
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                 <property name="text">
+                  <string>Config</string>
                  </property>
                 </widget>
                </item>
