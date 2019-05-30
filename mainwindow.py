@@ -685,7 +685,7 @@ class Ui_MainWindow(object):
         self.portLabel.setText(_translate("MainWindow", "Port:"))
         self.telescopeLabel_2.setText(_translate("MainWindow", "Telescope"))
         self.joystickLabel_2.setText(_translate("MainWindow", "Joystick:"))
-        self.joystick_btn.setText(_translate("MainWindow", "Config"))
+        self.joystick_btn.setText(_translate("MainWindow", "No joystick detected"))
         self.connectButton.setText(_translate("MainWindow", "Connect"))
         self.groupBox_2.setTitle(_translate("MainWindow", "Satellite"))
         self.catalogSatButton.setText(_translate("MainWindow", "Fro&m catalog"))

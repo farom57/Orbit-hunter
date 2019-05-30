@@ -26,9 +26,9 @@ class SatTrack(object):
         self.indi_joystick_driver = ""
 
         self.catalogs = [
-            CatalogItem("Recent launches", "https://celestrak.com/NORAD/elements/tle-new.txt", True),
-            CatalogItem("Space stations", "https://celestrak.com/NORAD/elements/stations.txt", True),
-            CatalogItem("100 brightest", "https://celestrak.com/NORAD/elements/visual.txt", True),
+            CatalogItem("Recent launches", "https://celestrak.com/NORAD/elements/tle-new.txt", False),
+            CatalogItem("Space stations", "https://celestrak.com/NORAD/elements/stations.txt", False),
+            CatalogItem("100 brightest", "https://celestrak.com/NORAD/elements/visual.txt", False),
             CatalogItem("Active satellites", "https://celestrak.com/NORAD/elements/active.txt", False),
             CatalogItem("Geosynchronous", "https://celestrak.com/NORAD/elements/geo.txt", False),
             CatalogItem("Iridium", "https://celestrak.com/NORAD/elements/iridium.txt", False),
@@ -39,7 +39,7 @@ class SatTrack(object):
             CatalogItem("Orbcomm", "https://celestrak.com/NORAD/elements/orbcomm.txt", False),
             CatalogItem("Amateur Radio", "https://celestrak.com/NORAD/elements/amateur.txt", False)
         ]
-        self._selected_satellite = 'ISS (ZARYA)'
+        self._selected_satellite = 'O3B FM12'
 
         self._observer_alt = 5
         self._observer_lat = "43.538 N"
@@ -49,12 +49,16 @@ class SatTrack(object):
         self.track_method = 0  # 0 = GOTO, 1 = Move, 2 = Timed moves, 3 = Speed
 
         self.p_gain = 0.5
-        self.tau_i = 3
-        self.tau_d = 1
-        self.max_rate = 1  # deg/s
+        self.tau_i = 3.
+        self.tau_d = 1.
+        self.max_rate = 1.  # deg/s
         self.i_sat = 0.5
 
         self.connection_timeout = 1
+
+        self.joystick_mapping = None
+        self.joystick_deadband = 2000
+        self.joystick_expo = 0.
 
         # dynamic data
         self.ui = None
@@ -62,12 +66,25 @@ class SatTrack(object):
         self.ts = load.timescale()
         self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
         self.update_tle()
-        self.tracking = False
+
         planets = load('de421.bsp')
         self.earth = planets['earth']
         self.sun = planets['sun']
 
         self.sat = self.satellites_tle[self._selected_satellite]  # TODO: add error management
+
+        self.tracking = False
+        self.offset_rate_NS = 0 #deg/s
+        self.offset_rate_EW = 0
+        self.offset_rate_FB = 0 # Front / Back
+        self.offset_rate_LR = 0 # Left / Right
+        self.offset_rate_time = 0 # s/s
+        self.t_offset_integration = None
+        self.offset_NS = 0
+        self.offset_EW = 0
+        self.offset_FB = 0
+        self.offset_LR = 0
+        self.offset_time = 0
 
     # Some properties to maintain to preserve internal consistency when attributes are updated and for error management
     @property
@@ -526,29 +543,100 @@ class SatTrack(object):
         if self.ui is not None:
             self.ui.tracking_stopped()
 
+    def update_joystick_offset(self, nvp):
+        # this procedure is called each time the joystick input are updated.
+        if self.joystick_mapping is None:
+            return
+
+        if len(nvp) != len(self.joystick_mapping):
+            self.log(1,"The joystick configuration does not correspond to the actual joystick. Please reconfigure the joystick")
+            self.joystick_mapping = None
+            return
+
+        # integrate until current time
+        self.integrate_joystick_offset()
+
+        self.offset_rate_NS = 0 #deg/s
+        self.offset_rate_EW = 0
+        self.offset_rate_FB = 0 # Front / Back
+        self.offset_rate_LR = 0 # Left / Right
+        self.offset_rate_time = 0 # s/s
+
+        for i in range(len(self.joystick_mapping)):
+
+            # apply dead-band and expo
+            if nvp[i].value < -self.joystick_deadband:
+                tmp = nvp[i].value + self.joystick_deadband
+            elif nvp[i].value > self.joystick_deadband:
+                tmp = nvp[i].value - self.joystick_deadband
+            else:
+                continue
+            tmp = tmp/32767.
+            tmp = tmp * abs(tmp)**3 * self.joystick_expo + tmp * (1-self.joystick_expo)
+
+            # apply mapping and inversion
+            if self.joystick_mapping[i][0]==1:
+                self.offset_rate_NS += tmp * self.max_rate * (1 if self.joystick_mapping[i][1] else -1)
+            elif self.joystick_mapping[i][0]==2:
+                self.offset_rate_EW += tmp * self.max_rate * (1 if self.joystick_mapping[i][1] else -1)
+            elif self.joystick_mapping[i][0] == 3:
+                self.offset_rate_FB += tmp * self.max_rate * (1 if self.joystick_mapping[i][1] else -1)
+            elif self.joystick_mapping[i][0] == 4:
+                self.offset_rate_LR += tmp * self.max_rate * (1 if self.joystick_mapping[i][1] else -1)
+            elif self.joystick_mapping[i][0]==5:
+                self.offset_rate_time += tmp * self.max_rate/360*86400 * (1 if self.joystick_mapping[i][1] else -1)
+
+    def integrate_joystick_offset(self):
+        # It integrates the offsets that are then applied in update_tracking()
+        if self.t_offset_integration is None:
+            self.t_offset_integration = self.t()
+            self.offset_NS = 0.
+            self.offset_EW = 0.
+            self.offset_FB = 0.
+            self.offset_LR = 0.
+            self.offset_time = 0.
+            return
+
+        t = self.t()
+        t_1 = self.t_offset_integration
+        dt = (t - t_1)*86400
+
+        self.offset_NS += dt*self.offset_rate_NS
+        self.offset_EW += dt * self.offset_rate_EW
+        self.offset_FB += dt * self.offset_rate_FB
+        self.offset_LR += dt * self.offset_rate_LR
+        self.offset_time += dt * self.offset_rate_time
+
+        self.t_offset_integration = t
+
+
+
     def update_tracking(self, current_ra, current_dec):
         # This procedure is called each time the telescope coordinates are updated
-        # TODO
+        # TODO apply offset
         if not self.tracking:
             return
 
+        # NOTE: all calculation are in deg
+
+        # target location and speed
         target_ra, target_dec, alt = self.sat_pos()
         target_ra_1, target_dec_1, alt = self.sat_pos(self.ts.tt(jd=self.t().tt + 1. / 86400.))  # at t + 1s
-
-        # perform all calculations in deg
-        diff_ra = target_ra._degrees - current_ra * 15
-        diff_dec = target_dec._degrees - current_dec
         target_speed_ra = target_ra_1._degrees - target_ra._degrees
         target_speed_dec = target_dec_1._degrees - target_dec._degrees
 
-        speed_ra = self.p_gain * diff_ra + target_speed_ra
-        speed_dec = self.p_gain * diff_dec + target_speed_dec
+        diff_ra = target_ra._degrees - current_ra * 15 + self.offset_EW
+        diff_dec = target_dec._degrees - current_dec + self.offset_NS
+
+        speed_ra = self.p_gain * diff_ra + target_speed_ra + self.offset_rate_EW
+        speed_dec = self.p_gain * diff_dec + target_speed_dec + self.offset_rate_NS
 
         self.log(3,
-                 "\ntime: {0}\ntarget:{1} / {2}\ncurrent: {3} / {4}\ndiff: {5} / {6}\ntarget speed: {7} / {8}\ncommand speec: {9} / {10}".format(
+                 "\ntime: {0}\ntarget:{1} / {2}\ncurrent: {3} / {4}\ndiff: {5} / {6}\ntarget speed: {7} / {8}\n"
+                 "command speed: {9} / {10}\noffset: {11} / {12}\noffset rate {13} / {14} ".format(
                      self.t_iso(), target_ra, target_dec, Angle(hours=current_ra), Angle(degrees=current_dec),
                      Angle(degrees=diff_ra), Angle(degrees=diff_dec), target_speed_ra, target_speed_dec, speed_ra,
-                     speed_dec))
+                     speed_dec, self.offset_EW, self.offset_NS, self.offset_rate_EW, self.offset_rate_NS))
 
         if speed_ra > self.max_rate:
             speed_ra = self.max_rate
@@ -560,6 +648,8 @@ class SatTrack(object):
             speed_dec = -self.max_rate
 
         self.indiclient.set_speed(speed_ra, speed_dec)
+
+        self.integrate_joystick_offset()
 
 
 class IndiClient(PyIndi.BaseClient):
@@ -629,6 +719,8 @@ class IndiClient(PyIndi.BaseClient):
     def newNumber(self, nvp):
         if nvp.device == self.telescope_name and nvp.name == "EQUATORIAL_EOD_COORD":
             self.st.update_tracking(nvp[0].value, nvp[1].value)
+        if nvp.device == "Joystick" and nvp.name == "JOYSTICK_AXES":
+            self.st.update_joystick_offset(nvp)
 
     def newText(self, tvp):
         pass

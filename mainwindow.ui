@@ -130,7 +130,7 @@
                   <bool>false</bool>
                  </property>
                  <property name="text">
-                  <string>Config</string>
+                  <string>No joystick detected</string>
                  </property>
                 </widget>
                </item>

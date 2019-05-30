@@ -62,7 +62,7 @@
         <number>-32767</number>
        </property>
        <property name="maximum">
-        <number>32766</number>
+        <number>32767</number>
        </property>
        <property name="value">
         <number>0</number>

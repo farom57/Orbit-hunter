@@ -199,28 +199,29 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
     def disconnected(self):
         """ when INDI connection is ended"""
         self.telescopeComboBox.blockSignals(True)
-        self.joystickCheckBox.blockSignals(True)
+        self.joystick_btn.blockSignals(True)
 
         self.connectButton.setText("Connect")
         self.indiLabel.setText("Not connected")
+        self.joystick_btn.setText("No joystick detected")
         self.telescopeComboBox.clear()
         self.telescopeComboBox.addItem("")
         self.telescopeComboBox.setEnabled(False)
-        self.joystickCheckBox.setEnabled(False)
+        self.joystick_btn.setEnabled(False)
         self.telescopeLabel_2.setEnabled(False)
         self.joystickLabel_2.setEnabled(False)
-        self.joystickCheckBox.setChecked(False)
+        self.joystick_btn.setChecked(False)
         self.hostEdit.setEnabled(True)
         self.portEdit.setEnabled(True)
 
-        self.joystickCheckBox.blockSignals(False)
+        self.joystick_btn.blockSignals(False)
         self.telescopeComboBox.blockSignals(False)
 
     def tracking_started(self):
-        self.trackButton.setText("Stop tracking")
+        self.center_btn.setText("Stop tracking")
 
     def tracking_stopped(self):
-        self.trackButton.setText("Track")
+        self.center_btn.setText("Track")
 
     def add_telescope(self, device_name):
         """ when INDI driver is detected"""
@@ -231,6 +232,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.joystick_btn.blockSignals(True)
         self.joystick_btn.setEnabled(True)
         self.joystick_btn.setChecked(True)
+        self.joystick_btn.setText("Configure")
         self.joystick_btn.blockSignals(False)
 
     def update_sat_list(self):
@@ -413,14 +415,24 @@ class Joystickdialog(QtWidgets.QDialog, Ui_Joystickdialog):
         # UI setup
         self.setupUi(self, self.joystick_axes_n)
 
-        #self.buttonBox.accepted.connect(self.???)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
+        self.buttonBox.accepted.connect(self.save_config)
+
+
+        # load config
+        if self.st.joystick_mapping is not None and len(self.st.joystick_mapping) == self.joystick_axes_n:
+            config = self.st.joystick_mapping
+            for i in range(self.joystick_axes_n):
+                self.mapping_combo[i].setCurrentIndex(config[i][0])
+                self.inverted_btn[i].setChecked(config[i][1])
+        self.deadband_spinbox.setValue(self.st.joystick_deadband)
+        self.expo_spinbox.setValue(self.st.joystick_expo)
 
 
 
-    def __del__(self):
-        self.st.indiclient.joystick_conf_ui = None
+    def done(self, res):
+        self.killTimer(self.timer)
+        super(Joystickdialog, self).done(res)
+
 
     def timerEvent(self, a0: 'QTimerEvent') -> None:
         for i in range(self.joystick_axes_n):
@@ -431,5 +443,13 @@ class Joystickdialog(QtWidgets.QDialog, Ui_Joystickdialog):
         self.show()
 
         # timer to update the input values:
-        self.startTimer(40)
+        self.timer = self.startTimer(40)
 
+    def save_config(self):
+        config = []
+        for i in range(self.joystick_axes_n):
+            config.append((self.mapping_combo[i].currentIndex(),self.inverted_btn[i].isChecked()))
+
+        self.st.joystick_mapping=config
+        self.st.joystick_deadband = self.deadband_spinbox.value()
+        self.st.joystick_expo = self.expo_spinbox.value()

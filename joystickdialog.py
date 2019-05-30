@@ -41,7 +41,7 @@ class Ui_Joystickdialog(object):
 
             self.progressBar.append(QtWidgets.QProgressBar(Joystickdialog))
             self.progressBar[i].setMinimum(-32767)
-            self.progressBar[i].setMaximum(32766)
+            self.progressBar[i].setMaximum(32767)
             self.progressBar[i].setProperty("value", 0)
             self.progressBar[i].setObjectName("progressBar_"+str(i))
             self.progressBar[i].setFormat("%v")
