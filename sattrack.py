@@ -1,19 +1,20 @@
 """
 Author: Romain Fafet (farom57@gmail.com)
 """
+from numpy import cos, sin, arcsin, arctan2, einsum, sqrt
 from skyfield.api import load, Topos, Star, EarthSatellite
-from skyfield.positionlib import Geocentric, ICRF
+from skyfield.positionlib import Geocentric
 from skyfield.units import Angle
-from numpy import cos, sin, arccos, arcsin, arctan2, pi, einsum, sqrt
-import PyIndi
-import time
+
+from functions import *
+from indiclient import *
 
 
 class SatTrack(object):
     """ SatTrack is the core class of pysattrack
 
-    The configuration is performed by the GUI by changing the attributs.
-    INDI connection is controled by connect() and disconnect() and the tracking
+    The configuration is performed by the GUI by changing the attributes.
+    INDI connection is controlled by connect() and disconnect() and the tracking
     by start(), stop(), move(ra_angle,dec_angle) and goto_rise_and_wait().
     """
 
@@ -49,9 +50,8 @@ class SatTrack(object):
         self.track_method = 0  # 0 = GOTO, 1 = Move, 2 = Timed moves, 3 = Speed
 
         self.p_gain = 0.5
-        self.tau_i = 3.
-        self.tau_d = 1.
-        self.max_rate = 1.  # deg/s
+        self.max_speed = 1.  # deg/s
+        self.joystick_speed = 1.  # deg/s
         self.i_sat = 0.5
 
         self.connection_timeout = 1
@@ -65,23 +65,24 @@ class SatTrack(object):
         self.indiclient = IndiClient(self)
         self.ts = load.timescale()
         self.obs = Topos(self._observer_lat, self._observer_lon, None, None, self._observer_alt)
+        self.satellites_tle = dict()
         self.update_tle()
 
         planets = load('de421.bsp')
         self.earth = planets['earth']
         self.sun = planets['sun']
 
-        self.sat = self.satellites_tle[self._selected_satellite]  # TODO: add error management
+        self.selected_satellite = self._selected_satellite
 
         self.tracking = False
-        self.offset_rate_NS = 0 #deg/s
-        self.offset_rate_EW = 0
-        self.offset_rate_FB = 0 # Front / Back
-        self.offset_rate_LR = 0 # Left / Right
-        self.offset_rate_time = 0 # s/s
+        self.offset_speed_dec = 0  # deg/s
+        self.offset_speed_ra = 0
+        self.offset_speed_FB = 0  # Front / Back
+        self.offset_speed_LR = 0  # Left / Right
+        self.offset_speed_time = 0  # s/s
         self.t_offset_integration = None
-        self.offset_NS = 0
-        self.offset_EW = 0
+        self.offset_dec = 0
+        self.offset_ra = 0
         self.offset_FB = 0
         self.offset_LR = 0
         self.offset_time = 0
@@ -154,26 +155,23 @@ class SatTrack(object):
         ra, dec, distance = topocentric.radec()
         return ra, dec, distance
 
-    def scalar_product(self, a, b):
-        return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]
-
     def illuminated(self, t=None):
         """ return false if the satellite is in shadow """
         if t is None:
             t = self.t()
 
         # projection of the earth center on the ray between the sun and the satellite
-        earth_sat_vect = (self.sat).at(t).position.au
+        earth_sat_vect = self.sat.at(t).position.au
         sun_sat_vect = (self.sat - (self.sun - self.earth)).at(t).position.au
-        product = self.scalar_product(earth_sat_vect,sun_sat_vect)
+        product = scalar_product(earth_sat_vect, sun_sat_vect)
 
-        if product < 0:     # The satellite is in front of the earth
+        if product < 0:  # The satellite is in front of the earth
             return True
-        else:               # The satellite is after the earth, let's check if the ray is underground
-            sun_sat_vect = sun_sat_vect / sqrt(self.scalar_product(sun_sat_vect,sun_sat_vect)) # normalize
-            earth_projection_vect = earth_sat_vect - self.scalar_product(earth_sat_vect,sun_sat_vect) * sun_sat_vect
-            earth_projection = Geocentric(position_au=earth_projection_vect,center=399,t=t)
-            return earth_projection.subpoint().elevation.m>0.
+        else:  # The satellite is after the earth, let's check if the ray is underground
+            sun_sat_vect = sun_sat_vect / sqrt(scalar_product(sun_sat_vect, sun_sat_vect))  # normalize
+            earth_projection_vect = earth_sat_vect - scalar_product(earth_sat_vect, sun_sat_vect) * sun_sat_vect
+            earth_projection = Geocentric(position_au=earth_projection_vect, center=399, t=t)
+            return earth_projection.subpoint().elevation.m > 0.
 
     def in_shadow(self, t=None):
         return not self.illuminated(t)
@@ -188,6 +186,7 @@ class SatTrack(object):
         else:
             raise Error("Unable to get the coordinates from the telescope")
 
+    # noinspection PyProtectedMember
     def radec2altaz(self, ra, dec, t=None):
         """
         Convert ra,dec in alt,az
@@ -214,7 +213,7 @@ class SatTrack(object):
         :param t: Skyfield Time object, use current time if omitted
         :return: alt, az as skyfield Angle object
         """
-        alt,az=self.radec2altaz(ra.radians, dec.radians, t)
+        alt, az = self.radec2altaz(ra.radians, dec.radians, t)
         return Angle(radians=alt, preference="degrees"), Angle(radians=az, preference="degrees")
 
     def t(self):
@@ -235,17 +234,21 @@ class SatTrack(object):
         if self.ui is not None:
             if level == 0:
                 print("ERROR: " + text)
-                self.ui.logBrowser.append("<font color=\"Red\">{0} - ERROR: {1}</font>".format(self.t_iso(), text))
+                self.ui.log_browser.append("<font color=\"Red\">{0} - ERROR: {1}</font>"
+                                           .format(self.t_iso(), text))
             elif level == 1:
                 print("WARNING: " + text)
-                self.ui.logBrowser.append("<font color=\"Orange\">{0} - WARNING: {1}</font>".format(self.t_iso(), text))
+                self.ui.log_browser.append("<font color=\"Orange\">{0} - WARNING: {1}</font>"
+                                           .format(self.t_iso(), text))
             elif level == 2:
                 print("Info: " + text)
-                self.ui.logBrowser.append("<font color=\"Black\">{0} - Info: {1}</font>".format(self.t_iso(), text))
+                self.ui.log_browser.append("<font color=\"Black\">{0} - Info: {1}</font>"
+                                           .format(self.t_iso(), text))
             else:
                 pass
-                print("Debug: "+text)
-                # self.ui.logBrowser.append("<font color=\"Blue\">{0} - Debug: {1}</font>".format(self.t_iso(), text))
+                print("Debug: " + text)
+                # self.ui.log_browser.append("<font color=\"Blue\">{0} - Debug: {1}</font>"
+                # .format(self.t_iso(), text))
 
     def update_tle(self, max_age=3):
         """ Update satellite elements, only elements older than 'max_age' days are downloaded  """
@@ -287,7 +290,7 @@ class SatTrack(object):
             alt, az = self.radec2altaz(ra.radians, dec.radians, t=self.ts.tt(jd=tjd))
             return az
 
-        dir = -1 if backward else 1
+        direction = -1 if backward else 1
         step = 60 * 20  # less than 1/4 of orbit
         small_step = 30  # few deg
         smaller_step = 1  # time resolution
@@ -301,52 +304,53 @@ class SatTrack(object):
         while True:
             # Ascending / descending orbit coarse detection
             alt0 = alt_t(dt0)
-            alt1 = alt_t(dt0 + step * dir)
-            while alt1 < alt0  and dt0 * dir < 86400 and alt1 < 0:
+            alt1 = alt_t(dt0 + step * direction)
+            while alt1 < alt0 and dt0 * direction < 86400 and alt1 < 0:
                 self.log(3, "Phase 1: Decreasing at dt0={0}, alt0={1}, alt1={2}".format(dt0, alt0, alt1))
                 alt0 = alt1
-                dt0 = dt0 + step * dir
-                alt1 = alt_t(dt0 + step * dir)
+                dt0 = dt0 + step * direction
+                alt1 = alt_t(dt0 + step * direction)
 
-            while alt1 >= alt0 and dt0 * dir < 86400:
+            while alt1 >= alt0 and dt0 * direction < 86400:
                 self.log(3, "Phase 1: Increasing at dt0={0}, alt0={1}, alt1={2}".format(dt0, alt0, alt1))
                 alt0 = alt1
-                dt0 = dt0 + step * dir
-                alt1 = alt_t(dt0 + step * dir)
+                dt0 = dt0 + step * direction
+                alt1 = alt_t(dt0 + step * direction)
 
-            if dt0 * dir > 86400 and alt1 < 0:
+            if dt0 * direction > 86400 and alt1 < 0:
                 self.log(2, "no other pass for today")
-                return ((None, None, None, None, t0), (None, None, None, None), (None, None, None, None))
+                return None, None, None, None, t0, None, None, None, None, None, None, None, None
 
-            self.log(3, "Phase 1: Maximum between dt0={0} and {1}".format(dt0 - step * dir, dt0 + step * dir))
-            dt0 = dt0 - step * dir
+            self.log(3,
+                     "Phase 1: Maximum between dt0={0} and {1}".format(dt0 - step * direction, dt0 + step * direction))
+            dt0 = dt0 - step * direction
             alt0 = alt_t(dt0)
-            alt1 = alt_t(dt0 + small_step * dir)
+            alt1 = alt_t(dt0 + small_step * direction)
 
             # Refining the maximum altitude
-            while alt1 >= alt0 and alt1 < 10 and dt0 * dir < 86400:
+            while alt1 >= alt0 and alt1 < 10 and dt0 * direction < 86400:
                 self.log(3, "Phase 2: Increasing at dt0={0}, alt0={1}, alt1={2}".format(dt0, alt0, alt1))
                 alt0 = alt1
-                dt0 = dt0 + small_step * dir
-                alt1 = alt_t(dt0 + small_step * dir)
+                dt0 = dt0 + small_step * direction
+                alt1 = alt_t(dt0 + small_step * direction)
 
-            if (alt1 < 0):
-                if dt0 * dir < 86400:
+            if alt1 < 0:
+                if dt0 * direction < 86400:
                     continue  # restart the search for the following orbit
                 else:
                     self.log(2, "no pass found")
-                    return ((None, None, None, None, t0), (None, None, None, None), (None, None, None, None))
+                    return None, None, None, None, t0, None, None, None, None, None, None, None, None
             else:
                 # Refining a 2nd time the maximum altitude to get the date
-                alt1 = alt_t(dt0 + smaller_step * dir)
+                alt1 = alt_t(dt0 + smaller_step * direction)
                 while alt1 >= alt0:
-                    if dt0 * dir > 86400:
+                    if dt0 * direction > 86400:
                         self.log(3, "no culmination today")
-                        return ((None, None, None, None, t0), (None, None, None, None), (None, None, None, None))
+                        return None, None, None, None, t0, None, None, None, None, None, None, None, None
                     self.log(3, "Phase 3: Increasing at dt0={0}, alt0={1}, alt1={2}".format(dt0, alt0, alt1))
                     alt0 = alt1
-                    dt0 = dt0 + smaller_step * dir
-                    alt1 = alt_t(dt0 + smaller_step * dir)
+                    dt0 = dt0 + smaller_step * direction
+                    alt1 = alt_t(dt0 + smaller_step * direction)
                 dt_culmination = dt0
 
                 # refining rise and set date by dichotomy
@@ -433,11 +437,8 @@ class SatTrack(object):
                                 dt1 = dt2
                                 az1 = az2
                             self.log(3,
-                                     "Phase 5b: Restrict meridian crossing date to dt={0} az={1} to dt={2} az={3}".format(
-                                         dt0,
-                                         az0,
-                                         dt1,
-                                         az1))
+                                     "Phase 5b: Restrict meridian crossing date to dt={0} az={1} to dt={2} az={3}"
+                                     .format(dt0, az0, dt1, az1))
                         dt_meridian = dt0
 
                 if dt_rise is not None:
@@ -477,13 +478,20 @@ class SatTrack(object):
                     az_set = None
 
                 self.log(2,
-                         "pass found:\n rise: dt={0} az={1}\n meridian:  dt={2} az={3} alt={4}\n culmination:  dt={5} az={6} alt={7}\n set: dt={8} az={9}".format(
-                             dt_rise, az_rise, dt_meridian, az_meridian, alt_meridian, dt_culmination,
-                             az_culmination,
-                             alt_culmination, dt_set, az_set))
+                         "pass found:\n"
+                         " rise: dt={0} az={1}\n"
+                         " meridian:  dt={2} az={3} alt={4}\n"
+                         " culmination:  dt={5} az={6} alt={7}\n"
+                         " set: dt={8} az={9}"
+                         .format(dt_rise, az_rise,
+                                 dt_meridian, az_meridian, alt_meridian,
+                                 dt_culmination, az_culmination, alt_culmination,
+                                 dt_set, az_set))
 
-                return ((t_rise, t_culmination, t_meridian, t_set, t0), (alt_rise, alt_culmination, alt_meridian, alt_set),
-                        (az_rise, az_culmination, az_meridian, az_set))
+                return (
+                    (t_rise, t_culmination, t_meridian, t_set, t0),
+                    (alt_rise, alt_culmination, alt_meridian, alt_set),
+                    (az_rise, az_culmination, az_meridian, az_set))
 
     # INDI connection
     def connect(self):
@@ -522,12 +530,11 @@ class SatTrack(object):
     def is_connected(self):
         return self.indiclient.isServerConnected()
 
-    def setUI(self, ui):
+    def set_ui(self, ui):
         self.ui = ui
 
     # Tracking
     def start_tracking(self):
-        # TODO
         if not self.indiclient.telescope_features["minimal"]:
             self.log(0, "Tracking cannot be started: no telescope connected")
             return
@@ -537,7 +544,6 @@ class SatTrack(object):
             self.ui.tracking_started()
 
     def stop_tracking(self):
-        # TODO
         self.tracking = False
         self.indiclient.set_speed(0, 0)
         if self.ui is not None:
@@ -549,18 +555,19 @@ class SatTrack(object):
             return
 
         if len(nvp) != len(self.joystick_mapping):
-            self.log(1,"The joystick configuration does not correspond to the actual joystick. Please reconfigure the joystick")
+            self.log(1, "The joystick configuration does not correspond to the actual joystick. "
+                        "Please reconfigure the joystick")
             self.joystick_mapping = None
             return
 
         # integrate until current time
         self.integrate_joystick_offset()
 
-        self.offset_rate_NS = 0 #deg/s
-        self.offset_rate_EW = 0
-        self.offset_rate_FB = 0 # Front / Back
-        self.offset_rate_LR = 0 # Left / Right
-        self.offset_rate_time = 0 # s/s
+        self.offset_speed_dec = 0  # deg/s
+        self.offset_speed_ra = 0
+        self.offset_speed_FB = 0  # Front / Back
+        self.offset_speed_LR = 0  # Left / Right
+        self.offset_speed_time = 0  # s/s
 
         for i in range(len(self.joystick_mapping)):
 
@@ -571,27 +578,28 @@ class SatTrack(object):
                 tmp = nvp[i].value - self.joystick_deadband
             else:
                 continue
-            tmp = tmp/32767.
-            tmp = tmp * abs(tmp)**3 * self.joystick_expo + tmp * (1-self.joystick_expo)
+            tmp = tmp / 32767.
+            tmp = tmp * abs(tmp) ** 3 * self.joystick_expo + tmp * (1 - self.joystick_expo)
 
             # apply mapping and inversion
-            if self.joystick_mapping[i][0]==1:
-                self.offset_rate_NS += tmp * self.max_rate * (1 if self.joystick_mapping[i][1] else -1)
-            elif self.joystick_mapping[i][0]==2:
-                self.offset_rate_EW += tmp * self.max_rate * (1 if self.joystick_mapping[i][1] else -1)
+            if self.joystick_mapping[i][0] == 1:
+                self.offset_speed_dec += tmp * self.max_speed * (1 if self.joystick_mapping[i][1] else -1)
+            elif self.joystick_mapping[i][0] == 2:
+                self.offset_speed_ra += tmp * self.max_speed * (1 if self.joystick_mapping[i][1] else -1)
             elif self.joystick_mapping[i][0] == 3:
-                self.offset_rate_FB += tmp * self.max_rate * (1 if self.joystick_mapping[i][1] else -1)
+                self.offset_speed_FB += tmp * self.max_speed * (1 if self.joystick_mapping[i][1] else -1)
             elif self.joystick_mapping[i][0] == 4:
-                self.offset_rate_LR += tmp * self.max_rate * (1 if self.joystick_mapping[i][1] else -1)
-            elif self.joystick_mapping[i][0]==5:
-                self.offset_rate_time += tmp * self.max_rate/360*86400 * (1 if self.joystick_mapping[i][1] else -1)
+                self.offset_speed_LR += tmp * self.max_speed * (1 if self.joystick_mapping[i][1] else -1)
+            elif self.joystick_mapping[i][0] == 5:
+                self.offset_speed_time += tmp * self.max_speed / 360 * 86400 * (
+                    1 if self.joystick_mapping[i][1] else -1)
 
     def integrate_joystick_offset(self):
         # It integrates the offsets that are then applied in update_tracking()
         if self.t_offset_integration is None:
             self.t_offset_integration = self.t()
-            self.offset_NS = 0.
-            self.offset_EW = 0.
+            self.offset_dec = 0.
+            self.offset_ra = 0.
             self.offset_FB = 0.
             self.offset_LR = 0.
             self.offset_time = 0.
@@ -599,21 +607,19 @@ class SatTrack(object):
 
         t = self.t()
         t_1 = self.t_offset_integration
-        dt = (t - t_1)*86400
+        dt = (t - t_1) * 86400
 
-        self.offset_NS += dt*self.offset_rate_NS
-        self.offset_EW += dt * self.offset_rate_EW
-        self.offset_FB += dt * self.offset_rate_FB
-        self.offset_LR += dt * self.offset_rate_LR
-        self.offset_time += dt * self.offset_rate_time
+        self.offset_dec += dt * self.offset_speed_dec
+        self.offset_ra += dt * self.offset_speed_ra
+        self.offset_FB += dt * self.offset_speed_FB
+        self.offset_LR += dt * self.offset_speed_LR
+        self.offset_time += dt * self.offset_speed_time
 
         self.t_offset_integration = t
 
-
-
+    # noinspection PyProtectedMember
     def update_tracking(self, current_ra, current_dec):
         # This procedure is called each time the telescope coordinates are updated
-        # TODO apply offset
         if not self.tracking:
             return
 
@@ -625,234 +631,31 @@ class SatTrack(object):
         target_speed_ra = target_ra_1._degrees - target_ra._degrees
         target_speed_dec = target_dec_1._degrees - target_dec._degrees
 
-        diff_ra = target_ra._degrees - current_ra * 15 + self.offset_EW
-        diff_dec = target_dec._degrees - current_dec + self.offset_NS
+        diff_ra = target_ra._degrees - current_ra * 15 + self.offset_ra
+        diff_dec = target_dec._degrees - current_dec + self.offset_dec
 
-        speed_ra = self.p_gain * diff_ra + target_speed_ra + self.offset_rate_EW
-        speed_dec = self.p_gain * diff_dec + target_speed_dec + self.offset_rate_NS
+        speed_ra = self.p_gain * diff_ra + target_speed_ra + self.offset_speed_ra
+        speed_dec = self.p_gain * diff_dec + target_speed_dec + self.offset_speed_dec
 
         self.log(3,
                  "\ntime: {0}\ntarget:{1} / {2}\ncurrent: {3} / {4}\ndiff: {5} / {6}\ntarget speed: {7} / {8}\n"
                  "command speed: {9} / {10}\noffset: {11} / {12}\noffset rate {13} / {14} ".format(
                      self.t_iso(), target_ra, target_dec, Angle(hours=current_ra), Angle(degrees=current_dec),
                      Angle(degrees=diff_ra), Angle(degrees=diff_dec), target_speed_ra, target_speed_dec, speed_ra,
-                     speed_dec, self.offset_EW, self.offset_NS, self.offset_rate_EW, self.offset_rate_NS))
+                     speed_dec, self.offset_ra, self.offset_dec, self.offset_speed_ra, self.offset_speed_dec))
 
-        if speed_ra > self.max_rate:
-            speed_ra = self.max_rate
-        if speed_dec > self.max_rate:
-            speed_dec = self.max_rate
-        if speed_ra < -self.max_rate:
-            speed_ra = -self.max_rate
-        if speed_dec < -self.max_rate:
-            speed_dec = -self.max_rate
+        if speed_ra > self.max_speed:
+            speed_ra = self.max_speed
+        if speed_dec > self.max_speed:
+            speed_dec = self.max_speed
+        if speed_ra < -self.max_speed:
+            speed_ra = -self.max_speed
+        if speed_dec < -self.max_speed:
+            speed_dec = -self.max_speed
 
         self.indiclient.set_speed(speed_ra, speed_dec)
 
         self.integrate_joystick_offset()
-
-
-class IndiClient(PyIndi.BaseClient):
-    def __init__(self, st):
-        super(IndiClient, self).__init__()
-        self.st = st
-        self.telescope_name = None
-        self.telescope = None
-        self.telescope_prop = {
-            "CONNECTION": None,
-            "EQUATORIAL_EOD_COORD": None,
-            "ON_COORD_SET": None,
-            "TELESCOPE_MOTION_NS": None,
-            "TELESCOPE_MOTION_WE": None,
-            "TELESCOPE_TIMED_GUIDE_NS": None,
-            "TELESCOPE_TIMED_GUIDE_WE": None,
-            "TELESCOPE_CURRENT_RATE": None,
-            "TELESCOPE_SLEW_RATE": None,
-            "TELESCOPE_PIER_SIDE": None}
-        self.telescope_features = {
-            "minimal": False,
-            "move": False,
-            "timed": False,
-            "speed": False,
-            "pier": False,
-            "rate": False}
-        self.joystick = None
-        self.joystick_axes = None
-
-    def newDevice(self, d):
-        self.st.log(2, "New device: " + d.getDeviceName())
-
-        if d.getDeviceName() == "Joystick":
-            self.joystick = d
-        else:
-            self.st.ui.add_telescope(d.getDeviceName())
-
-    def newProperty(self, p):
-        if p.getDeviceName() == self.telescope_name:
-            if p.getName() in self.telescope_prop.keys():
-                self.telescope_prop[p.getName()] = p
-                self.update_telescope_features()
-
-        if p.getDeviceName() == "Joystick":
-            if p.getName() == "CONNECTION":
-                # try to connect
-                p.getSwitch()[0].s = PyIndi.ISS_ON
-                p.getSwitch()[1].s = PyIndi.ISS_OFF
-                self.sendNewSwitch(p.getSwitch())
-            elif p.getName() == "JOYSTICK_AXES":
-                self.joystick_axes = p.getNumber()
-                self.st.ui.add_joystick()
-
-
-    def removeProperty(self, p):
-        if p.getDeviceName() == self.telescope_name:
-            if p.getName() in self.telescope_prop.keys():
-                self.telescope_prop[p.getName()] = None
-                self.update_telescope_features()
-
-    def newBLOB(self, bp):
-        pass
-
-    def newSwitch(self, svp):
-        pass
-
-    def newNumber(self, nvp):
-        if nvp.device == self.telescope_name and nvp.name == "EQUATORIAL_EOD_COORD":
-            self.st.update_tracking(nvp[0].value, nvp[1].value)
-        if nvp.device == "Joystick" and nvp.name == "JOYSTICK_AXES":
-            self.st.update_joystick_offset(nvp)
-
-    def newText(self, tvp):
-        pass
-
-    def newLight(self, lvp):
-        pass
-
-    def newMessage(self, d, m):
-        pass
-
-    def serverConnected(self):
-        pass
-
-    def serverDisconnected(self, code):
-        if self.st.ui is not None:
-            self.st.ui.disconnected()
-
-    def set_telescope(self, device_name):
-        """Configure the device as telescope (try to connect & check properties). Return True if successful"""
-        self.telescope_name = device_name
-        self.telescope = None
-        self.telescope_prop = {
-            "CONNECTION": None,
-            "EQUATORIAL_EOD_COORD": None,
-            "ON_COORD_SET": None,
-            "TELESCOPE_MOTION_NS": None,
-            "TELESCOPE_MOTION_WE": None,
-            "TELESCOPE_TIMED_GUIDE_NS": None,
-            "TELESCOPE_TIMED_GUIDE_WE": None,
-            "TELESCOPE_CURRENT_RATE": None,
-            "TELESCOPE_SLEW_RATE": None,
-            "TELESCOPE_PIER_SIDE": None}
-        self.telescope_features = {
-            "minimal": False,
-            "move": False,
-            "timed": False,
-            "speed": False,
-            "pier": False,
-            "rate": False}
-
-        self.telescope = self.getDevice(device_name)
-        if self.telescope is None:
-            self.st.log(0, "Error during driver connection: Driver not found: " + device_name)
-            return False
-
-        self.watchDevice(self.telescope_name)
-
-        # Check existing properties (new ones will be detected later by newProperty())
-        for key in self.telescope_prop:
-            prop = self.telescope.getProperty(key)
-            if prop:
-                self.telescope_prop[key] = prop
-
-        t = 0
-        while self.telescope_prop["CONNECTION"] is None:
-            if t > self.st.connection_timeout:
-                self.st.log(0, "Error during driver connection: CONNECT property not found")
-                return False
-            time.sleep(0.05)
-            t = t + 0.05
-
-        if not (self.telescope.isConnected()):
-            self.telescope_prop["CONNECTION"].getSwitch()[0].s = PyIndi.ISS_ON
-            self.telescope_prop["CONNECTION"].getSwitch()[1].s = PyIndi.ISS_OFF
-            self.sendNewSwitch(self.telescope_prop["CONNECTION"].getSwitch())
-
-        self.update_telescope_features()
-
-        # Required set of properties:
-        # - Minimal: CONNECT, EQUATORIAL_EOD_COORD, ON_COORD_SET
-        # - Move: TELESCOPE_MOTION_NS, TELESCOPE_MOTION_WE
-        # - Timed move: TELESCOPE_TIMED_GUIDE_NS, TELESCOPE_TIMED_GUIDE_WE
-        # - Speed: TELESCOPE_CURRENT_RATE
-        # - Other: TELESCOPE_SLEW_RATE, TELESCOPE_PIER_SIDE
-
-        t = 0
-        while not (self.telescope_features["minimal"] & (
-                self.telescope_features["move"] or self.telescope_features["timed"] or self.telescope_features[
-            "speed"])):
-            if t > self.st.connection_timeout:
-                self.st.log(0,
-                            "Error during driver connection: No control method available, Is \"" + device_name + "\" a telescope device ?")
-                return False
-            time.sleep(0.05)
-            t = t + 0.05
-
-        self.update_telescope_features()
-        self.st.log(2, device_name + " connected")
-        return True
-
-    def update_telescope_features(self):
-        telescope_requirements = {
-            "minimal": {"CONNECTION", "EQUATORIAL_EOD_COORD", "ON_COORD_SET"},
-            "move": {"TELESCOPE_MOTION_NS", "TELESCOPE_MOTION_WE"},
-            "timed": {"TELESCOPE_TIMED_GUIDE_NS", "TELESCOPE_TIMED_GUIDE_WE"},
-            "speed": {"TELESCOPE_CURRENT_RATE"},
-            "pier": {"TELESCOPE_PIER_SIDE"},
-            "rate": {"TELESCOPE_SLEW_RATE"}}
-        old = self.telescope_features
-
-        for feat in telescope_requirements:
-            satisfied = True
-            for req in telescope_requirements[feat]:
-                if self.telescope_prop[req] is None:
-                    satisfied = False
-            self.telescope_features[feat] = satisfied
-
-        if not (old == self.telescope_features) & (self.st.ui is not None):
-            self.st.ui.update_telescope_features(self.telescope_features)
-
-    def set_speed(self, ra_speed: float, dec_speed: float):
-        """ send the command to change the speed of the telescope (in deg/s) """
-
-        if not self.telescope_features["speed"]:
-            raise Error("Variable motion rate not supported by {0}".format(self.telescope_name))
-
-        rate_prop = self.telescope.getNumber("TELESCOPE_CURRENT_RATE")
-
-        ra_speed = ra_speed / 360 * 86164.1
-        dec_speed = dec_speed / 360 * 86164.1
-        if ra_speed > rate_prop[0].max:
-            ra_speed = rate_prop[0].max
-        if dec_speed > rate_prop[1].max:
-            dec_speed = rate_prop[1].max
-        if ra_speed < rate_prop[0].min:
-            ra_speed = rate_prop[0].min
-        if dec_speed < rate_prop[1].min:
-            dec_speed = rate_prop[1].min
-
-        rate_prop[0].value = ra_speed
-        rate_prop[1].value = dec_speed
-        self.sendNewNumber(rate_prop)
 
 
 class CatalogItem(object):
