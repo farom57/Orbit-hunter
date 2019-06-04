@@ -666,6 +666,9 @@
              </item>
              <item>
               <widget class="QPushButton" name="set_TLE_btn">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
                <property name="text">
                 <string>Set TLE</string>
                </property>

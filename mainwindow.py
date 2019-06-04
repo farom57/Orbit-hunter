@@ -348,6 +348,7 @@ class Ui_MainWindow(object):
         spacerItem2 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout_9.addItem(spacerItem2)
         self.set_TLE_btn = QtWidgets.QPushButton(self.satellite_box)
+        self.set_TLE_btn.setEnabled(False)
         self.set_TLE_btn.setObjectName("set_TLE_btn")
         self.horizontalLayout_9.addWidget(self.set_TLE_btn)
         self.verticalLayout_4.addLayout(self.horizontalLayout_9)

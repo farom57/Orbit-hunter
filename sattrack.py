@@ -75,11 +75,16 @@ class SatTrack(object):
         self.selected_satellite = self._selected_satellite
 
         self.tracking = False
-        self.offset_speed_dec = 0  # deg/s
-        self.offset_speed_ra = 0
-        self.offset_speed_FB = 0  # Front / Back
-        self.offset_speed_LR = 0  # Left / Right
-        self.offset_speed_time = 0  # s/s
+        self.offset_joystick_speed_dec = 0  # deg/s
+        self.offset_joystick_speed_ra = 0
+        self.offset_joystick_speed_FB = 0  # Front / Back
+        self.offset_joystick_speed_LR = 0  # Left / Right
+        self.offset_joystick_speed_time = 0  # s/s
+        self.offset_ui_speed_dec = 0  # deg/s
+        self.offset_ui_speed_ra = 0
+        self.offset_ui_speed_FB = 0  # Front / Back
+        self.offset_ui_speed_LR = 0  # Left / Right
+        self.offset_ui_speed_time = 0  # s/s
         self.t_offset_integration = None
         self.offset_dec = 0
         self.offset_ra = 0
@@ -108,8 +113,12 @@ class SatTrack(object):
             self._selected_satellite = n_sat
 
     def set_tle(self, tle):
-        lines = tle.strip().splitlines()
-        self.sat = EarthSatellite(lines[0], lines[1])
+        # set a custom TLE. If the format is incorrect, a ValueError exception is raised.
+        try:
+            lines = tle.strip().splitlines()
+        except IndexError:
+            raise ValueError("incorrect number of lines")
+        self.sat = EarthSatellite(lines[0], lines[1]) # also raise a ValueError
         self._selected_satellite = "TLE"
 
     @property
@@ -550,7 +559,7 @@ class SatTrack(object):
             self.ui.tracking_stopped()
 
     def update_joystick_offset(self, nvp):
-        # this procedure is called each time the joystick input are updated.
+        # this procedure is called by indiclient each time the joystick input are updated.
         if self.joystick_mapping is None:
             return
 
@@ -561,13 +570,13 @@ class SatTrack(object):
             return
 
         # integrate until current time
-        self.integrate_joystick_offset()
+        self.integrate_offset()
 
-        self.offset_speed_dec = 0  # deg/s
-        self.offset_speed_ra = 0
-        self.offset_speed_FB = 0  # Front / Back
-        self.offset_speed_LR = 0  # Left / Right
-        self.offset_speed_time = 0  # s/s
+        self.offset_joystick_speed_dec = 0  # deg/s
+        self.offset_joystick_speed_ra = 0
+        self.offset_joystick_speed_FB = 0  # Front / Back
+        self.offset_joystick_speed_LR = 0  # Left / Right
+        self.offset_joystick_speed_time = 0  # s/s
 
         for i in range(len(self.joystick_mapping)):
 
@@ -583,18 +592,36 @@ class SatTrack(object):
 
             # apply mapping and inversion
             if self.joystick_mapping[i][0] == 1:
-                self.offset_speed_dec += tmp * self.max_speed * (1 if self.joystick_mapping[i][1] else -1)
+                self.offset_joystick_speed_dec += tmp * self.joystick_speed * (1 if self.joystick_mapping[i][1] else -1)
             elif self.joystick_mapping[i][0] == 2:
-                self.offset_speed_ra += tmp * self.max_speed * (1 if self.joystick_mapping[i][1] else -1)
+                self.offset_joystick_speed_ra += tmp * self.joystick_speed * (1 if self.joystick_mapping[i][1] else -1)
             elif self.joystick_mapping[i][0] == 3:
-                self.offset_speed_FB += tmp * self.max_speed * (1 if self.joystick_mapping[i][1] else -1)
+                self.offset_joystick_speed_FB += tmp * self.joystick_speed * (1 if self.joystick_mapping[i][1] else -1)
             elif self.joystick_mapping[i][0] == 4:
-                self.offset_speed_LR += tmp * self.max_speed * (1 if self.joystick_mapping[i][1] else -1)
+                self.offset_joystick_speed_LR += tmp * self.joystick_speed * (1 if self.joystick_mapping[i][1] else -1)
             elif self.joystick_mapping[i][0] == 5:
-                self.offset_speed_time += tmp * self.max_speed / 360 * 86400 * (
+                self.offset_joystick_speed_time += tmp * self.joystick_speed / 360 * 86400 * (
                     1 if self.joystick_mapping[i][1] else -1)
+                
+    def update_ui_offset(self, north_south, east_west, front_back, left_right, future_past):
+        """
+        this procedure is called by the UI each time a move button is pressed or released.
+        :param north_south: +1 for north, -1 for south, 0 for no move
+        :param east_west: ...
+        :param front_back: ...
+        :param left_right: ...
+        :param future_past: ...
+        """
+        # integrate until current time
+        self.integrate_offset()
 
-    def integrate_joystick_offset(self):
+        self.offset_ui_speed_dec = self.joystick_speed * north_south
+        self.offset_ui_speed_ra = self.joystick_speed * east_west
+        self.offset_ui_speed_FB = self.joystick_speed * front_back
+        self.offset_ui_speed_LR = self.joystick_speed * left_right
+        self.offset_ui_speed_time = self.joystick_speed / 360 * 86400 * future_past
+
+    def integrate_offset(self):
         # It integrates the offsets that are then applied in update_tracking()
         if self.t_offset_integration is None:
             self.t_offset_integration = self.t()
@@ -609,11 +636,11 @@ class SatTrack(object):
         t_1 = self.t_offset_integration
         dt = (t - t_1) * 86400
 
-        self.offset_dec += dt * self.offset_speed_dec
-        self.offset_ra += dt * self.offset_speed_ra
-        self.offset_FB += dt * self.offset_speed_FB
-        self.offset_LR += dt * self.offset_speed_LR
-        self.offset_time += dt * self.offset_speed_time
+        self.offset_dec += dt * (self.offset_joystick_speed_dec + self.offset_ui_speed_dec)
+        self.offset_ra += dt * (self.offset_joystick_speed_ra + self.offset_ui_speed_ra)
+        self.offset_FB += dt * (self.offset_joystick_speed_FB + self.offset_ui_speed_FB)
+        self.offset_LR += dt * (self.offset_joystick_speed_LR + self.offset_ui_speed_LR)
+        self.offset_time += dt * (self.offset_joystick_speed_time + self.offset_ui_speed_time)
 
         self.t_offset_integration = t
 
@@ -634,15 +661,15 @@ class SatTrack(object):
         diff_ra = target_ra._degrees - current_ra * 15 + self.offset_ra
         diff_dec = target_dec._degrees - current_dec + self.offset_dec
 
-        speed_ra = self.p_gain * diff_ra + target_speed_ra + self.offset_speed_ra
-        speed_dec = self.p_gain * diff_dec + target_speed_dec + self.offset_speed_dec
+        speed_ra = self.p_gain * diff_ra + target_speed_ra + self.offset_joystick_speed_ra
+        speed_dec = self.p_gain * diff_dec + target_speed_dec + self.offset_joystick_speed_dec
 
         self.log(3,
                  "\ntime: {0}\ntarget:{1} / {2}\ncurrent: {3} / {4}\ndiff: {5} / {6}\ntarget speed: {7} / {8}\n"
                  "command speed: {9} / {10}\noffset: {11} / {12}\noffset rate {13} / {14} ".format(
                      self.t_iso(), target_ra, target_dec, Angle(hours=current_ra), Angle(degrees=current_dec),
                      Angle(degrees=diff_ra), Angle(degrees=diff_dec), target_speed_ra, target_speed_dec, speed_ra,
-                     speed_dec, self.offset_ra, self.offset_dec, self.offset_speed_ra, self.offset_speed_dec))
+                     speed_dec, self.offset_ra, self.offset_dec, self.offset_joystick_speed_ra, self.offset_joystick_speed_dec))
 
         if speed_ra > self.max_speed:
             speed_ra = self.max_speed
@@ -655,7 +682,7 @@ class SatTrack(object):
 
         self.indiclient.set_speed(speed_ra, speed_dec)
 
-        self.integrate_joystick_offset()
+        self.integrate_offset()
 
 
 class CatalogItem(object):
