@@ -3,6 +3,7 @@ Author: Romain Fafet (farom57@gmail.com)
 """
 
 from PyQt5 import QtCore, QtWidgets
+from skyfield.units import Angle
 
 from catalogdialog import Ui_Catalogdialog
 from joystickdialog import Ui_Joystickdialog
@@ -23,6 +24,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
         # Other init
         self.indi_telescope_options = ["None"]
+        self.time_dg = None
+        self.cat_dg = None
+        self.tle_dg = None
+        self.joy_dg = None
 
         # Load dynamic content
         self.host_edit.setText(self.st.indi_server_ip)
@@ -30,8 +35,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.indi_lbl.setText("Not connected")
         self.p_gain_spinbox.setValue(self.st.p_gain)
         self.max_speed_spinbox.setValue(self.st.max_speed)
-        self.joystick_speed_spinbox.setValue(self.st.joystick_speed)
-        self.speed_lbl.setText("{0:7.3f} deg/s".format(self.st.joystick_speed))
+        self.update_speed()
         self.latitude_edit.setText(self.st.observer_lat)
         self.longitude_edit.setText(self.st.observer_lon)
         self.altitude_spinbox.setValue(self.st.observer_alt)
@@ -40,6 +44,8 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.current_pass = self.st.next_pass(self.st.t())
         self.update_pass()
+
+        self.update_speed()
 
         # Slot connect to internal functions
         self.host_edit.textChanged.connect(self.connection_info_changed)
@@ -69,6 +75,8 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.down_left_btn.released.connect(self.move_stop)
         self.down_btn.released.connect(self.move_stop)
         self.down_right_btn.released.connect(self.move_stop)
+        self.fast_btn.clicked.connect(self.faster_clicked)
+        self.slow_btn.clicked.connect(self.slower_clicked)
 
         self.latitude_edit.textChanged.connect(self.location_changed)
         self.longitude_edit.textChanged.connect(self.location_changed)
@@ -93,7 +101,6 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.catalog_sat_btn.toggled['bool'].connect(self.sat_combobox.setEnabled)
         self.catalog_sat_btn.toggled['bool'].connect(self.catalog_config_btn.setEnabled)
         self.catalog_sat_btn.toggled['bool'].connect(self.set_TLE_btn.setDisabled)
-        # self.catalog_sat_btn.toggled['bool'].connect(self.tleEdit.setDisabled)
 
         # timer to update the time:
         self.startTimer(1000)
@@ -112,28 +119,30 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
             self.st.stop_tracking()
 
     def settime_clicked(self):
-        self.timedg = Timedialog(self.st)
-        self.timedg.show_modal()
+        self.time_dg = Timedialog(self.st)
+        self.time_dg.show_modal()
 
     def catconfig_clicked(self):
-        self.catdg = Catalogdialog(self.st)
-        self.catdg.show_modal()
+        self.cat_dg = Catalogdialog(self.st)
+        self.cat_dg.show_modal()
 
     def tleconfig_clicked(self):
-        self.tledg = Tledialog(self)
-        self.tledg.show_modal()
+        self.tle_dg = Tledialog(self)
+        self.tle_dg.show_modal()
 
     def joystickconfig_clicked(self):
-        self.joydg = Joystickdialog(self.st)
-        self.joydg.show_modal()
+        self.joy_dg = Joystickdialog(self.st)
+        self.joy_dg.show_modal()
 
     def nextpass_clicked(self):
+        # search the next pass in the 24h following the end of the current pass (if any) or the last calculation
+        # starting point
         if self.current_pass[0][3] is not None:
             starting = self.current_pass[0][3]  # set date of the current pass
         else:
             starting = self.st.ts.tt(jd=self.current_pass[0][5] + 1)  # +24h if no current pass
         self.current_pass = self.st.next_pass(starting, backward=False)
-        self.update_pass()
+        self.update_pass()  # update display
 
     def prevpass_clicked(self):
         if self.current_pass[0][0] is not None:
@@ -141,13 +150,31 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             starting = self.st.ts.tt(jd=self.current_pass[0][5] - 1)  # -24h if no current pass
         self.current_pass = self.st.next_pass(starting, backward=True)
-        self.update_pass()
+        self.update_pass()  # update display
 
     def gotorise_clicked(self):
-        self.st.log(1, 'gotorise not yet implemented')
+        assert self.current_pass[0][0] is not None
+        self.st.stop_tracking()
+        self.st.goto_altaz(self.current_pass[1][0], self.current_pass[2][0])
+        # TODO: wait & start tracking
 
     def gotomeridian_clicked(self):
-        self.st.log(1, 'gotomeridian not yet implemented')
+        assert self.current_pass[0][2] is not None
+        self.st.stop_tracking()
+        self.st.goto_altaz(self.current_pass[1][2], self.current_pass[2][2])
+        # TODO: wait & start tracking
+
+    def faster_clicked(self):
+        self.st.joystick_speed = min(self.joystick_speed_spinbox.value() * 2, self.max_speed_spinbox.value())
+        self.update_speed()
+
+    def slower_clicked(self):
+        self.st.joystick_speed = self.joystick_speed_spinbox.value() / 2
+        self.update_speed()
+
+    def update_speed(self):
+        self.joystick_speed_spinbox.setValue(self.st.joystick_speed)
+        self.speed_lbl.setText("{0:5.1f}x".format(self.joystick_speed_spinbox.value() * 86400 / 360))
 
     # joystick btn
     def move_up_left(self):
@@ -200,13 +227,13 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def satellite_changed(self, name):
         if self.enable_satellite_changed:  # can be disabled during combobox update after new catalog selection
+            self.st.stop_tracking()
             self.st.selected_satellite = name
             age = self.st.t() - self.st.sat.epoch
             self.sat_lbl.setText('Valid elements, ' + '{:.2f} days old'.format(age))
             self.st.log(1, 'Satellite changed: ' + name)
             self.current_pass = self.st.next_pass(self.st.t())
             self.update_pass()
-
 
     def location_changed(self):
         try:
@@ -217,11 +244,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         except ValueError as err:
             self.location_lbl.setText("Invalid location:\n" + err.args[0])
 
-    def trackmode_changed(self, mode):
-        self.st.log(1, 'trackmode_changed not yet implemented')
-
     def trackparam_changed(self, dummy):
-        self.st.log(1, 'trackparam_changed not yet implemented')
+        self.st.max_speed = self.max_speed_spinbox.value()
+        self.st.joystick_speed = self.joystick_speed_spinbox.value()
+        self.st.p_gain = self.p_gain_spinbox.value()
 
     # System callbacks
     def connected(self):
@@ -233,6 +259,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.joystick_lbl.setEnabled(True)
         self.host_edit.setEnabled(False)
         self.port_edit.setEnabled(False)
+        self.update_pass()  # enabling goto button
 
     def disconnected(self):
         """ when INDI connection is ended"""
@@ -254,9 +281,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.joystick_btn.blockSignals(False)
         self.telescope_combobox.blockSignals(False)
+        self.update_pass()  # disabling goto button
 
     def tracking_started(self):
-        self.center_btn.setText("Stop tracking")
+        self.center_btn.setText("Stop")
 
     def tracking_stopped(self):
         self.center_btn.setText("Track")
@@ -301,14 +329,16 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
             self.satellite_changed(keys[0])
 
     def update_pass(self):
-        if (self.current_pass[0][0] is not None):
+        if self.current_pass[0][0] is not None:
             self.rise_time_lbl.setText(self.current_pass[0][0].utc_iso())
             self.rise_az_lbl.setText(str(self.current_pass[2][0]))
+            self.goto_rise_btn.setEnabled(self.st.is_connected())
         else:
             self.rise_time_lbl.setText("-")
             self.rise_az_lbl.setText("-")
+            self.goto_rise_btn.setEnabled(False)
 
-        if (self.current_pass[0][1] is not None):
+        if self.current_pass[0][1] is not None:
             self.culmination_time_lbl.setText(self.current_pass[0][1].utc_iso())
             self.culmination_alt_lbl.setText(str(self.current_pass[1][1]))
             self.culmination_az_lbl.setText(str(self.current_pass[2][1]))
@@ -317,16 +347,18 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
             self.culmination_alt_lbl.setText("-")
             self.culmination_az_lbl.setText("-")
 
-        if (self.current_pass[0][2] is not None):
+        if self.current_pass[0][2] is not None:
             self.meridian_time_lbl.setText(self.current_pass[0][2].utc_iso())
             self.meridian_alt_lbl.setText(str(self.current_pass[1][2]))
             self.meridian_az_lbl.setText(str(self.current_pass[2][2]))
+            self.goto_meridian_btn.setEnabled(self.st.is_connected())
         else:
             self.meridian_time_lbl.setText("-")
             self.meridian_alt_lbl.setText("-")
             self.meridian_az_lbl.setText("-")
+            self.goto_meridian_btn.setEnabled(False)
 
-        if (self.current_pass[0][3] is not None):
+        if self.current_pass[0][3] is not None:
             self.set_time_lbl.setText(self.current_pass[0][3].utc_iso())
             self.set_az_lbl.setText(str(self.current_pass[2][3]))
         else:
@@ -353,16 +385,25 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         try:
             tel_ra, tel_dec = self.st.telescope_pos()
             tel_alt, tel_az = self.st.radec2altaz_2(tel_ra, tel_dec)
+            diff_ra = Angle(degrees=tel_ra._degrees - sat_ra._degrees)
+            diff_dec = Angle(degrees=tel_dec._degrees - sat_dec._degrees)
         except Error:
             self.tel_ra_lbl.setText("-")
             self.tel_dec_lbl.setText("-")
             self.tel_alt_lbl.setText("-")
             self.tel_az_lbl.setText("-")
+            self.diff_ra_lbl.setText("-")
+            self.diff_dec_lbl.setText("-")
         else:
             self.tel_ra_lbl.setText(tel_ra.hstr())
             self.tel_dec_lbl.setText(tel_dec.dstr())
             self.tel_alt_lbl.setText(tel_alt.dstr())
             self.tel_az_lbl.setText(tel_az.dstr())
+            self.diff_ra_lbl.setText(diff_ra.dstr())
+            self.diff_dec_lbl.setText(diff_dec.dstr())
+
+        self.offset_ra_lbl.setText(Angle(degrees=self.st.offset_ra).dstr())
+        self.offset_dec_lbl.setText(Angle(degrees=self.st.offset_dec).dstr())
 
 
 class Timedialog(QtWidgets.QDialog, Ui_Timedialog):
@@ -407,9 +448,9 @@ class Catalogdialog(QtWidgets.QDialog, Ui_Catalogdialog):
 
         # UI setup
         self.setupUi(self)
-        self.buttonbox.accepted.connect(self.setcatalog)
-        self.buttonbox.accepted.connect(self.accept)
-        self.buttonbox.rejected.connect(self.reject)
+        self.buttonBox.accepted.connect(self.setcatalog)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
 
         # Populate list widget
         for catalog in self.st.catalogs:
@@ -450,7 +491,7 @@ class Joystickdialog(QtWidgets.QDialog, Ui_Joystickdialog):
         # UI setup
         self.setupUi(self, self.joystick_axes_n)
 
-        self.buttonbox.accepted.connect(self.save_config)
+        self.buttonBox.accepted.connect(self.save_config)
 
         # load config
         if self.st.joystick_mapping is not None and len(self.st.joystick_mapping) == self.joystick_axes_n:

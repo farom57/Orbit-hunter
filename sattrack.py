@@ -1,9 +1,10 @@
 """
 Author: Romain Fafet (farom57@gmail.com)
 """
-from numpy import cos, sin, arcsin, arctan2, einsum, sqrt
+from numpy import cos, sin, arcsin, arctan2, einsum, sqrt, pi
 from skyfield.api import load, Topos, Star, EarthSatellite
 from skyfield.positionlib import Geocentric
+from urllib.parse import urlparse
 from skyfield.units import Angle
 
 from functions import *
@@ -27,24 +28,27 @@ class SatTrack(object):
         self.indi_joystick_driver = ""
 
         self.catalogs = [
-            CatalogItem("Recent launches", "https://celestrak.com/NORAD/elements/tle-new.txt", False),
-            CatalogItem("Space stations", "https://celestrak.com/NORAD/elements/stations.txt", False),
-            CatalogItem("100 brightest", "https://celestrak.com/NORAD/elements/visual.txt", False),
-            CatalogItem("Active satellites", "https://celestrak.com/NORAD/elements/active.txt", False),
-            CatalogItem("Geosynchronous", "https://celestrak.com/NORAD/elements/geo.txt", False),
-            CatalogItem("Iridium", "https://celestrak.com/NORAD/elements/iridium.txt", False),
-            CatalogItem("Iridium NEXT", "https://celestrak.com/NORAD/elements/iridium-NEXT.txt", False),
-            CatalogItem("Globalstar", "https://celestrak.com/NORAD/elements/globalstar.txt", False),
-            CatalogItem("Intelsat", "https://celestrak.com/NORAD/elements/intelsat.txt", False),
+            CatalogItem("Recent launches", "https://celestrak.com/NORAD/elements/tle-new.txt", True),
+            CatalogItem("Space stations", "https://celestrak.com/NORAD/elements/stations.txt", True),
+            CatalogItem("100 brightest", "https://celestrak.com/NORAD/elements/visual.txt", True),
+            CatalogItem("Active satellites", "https://celestrak.com/NORAD/elements/active.txt", True),
+            CatalogItem("Geosynchronous", "https://celestrak.com/NORAD/elements/geo.txt", True),
+            CatalogItem("Iridium", "https://celestrak.com/NORAD/elements/iridium.txt", True),
+            CatalogItem("Iridium NEXT", "https://celestrak.com/NORAD/elements/iridium-NEXT.txt", True),
+            CatalogItem("Starlink", "https://celestrak.com/NORAD/elements/starlink.txt", True),
+            CatalogItem("Globalstar", "https://celestrak.com/NORAD/elements/globalstar.txt", True),
+            CatalogItem("Intelsat", "https://celestrak.com/NORAD/elements/intelsat.txt", True),
             CatalogItem("SES", "https://celestrak.com/NORAD/elements/ses.txt", True),
-            CatalogItem("Orbcomm", "https://celestrak.com/NORAD/elements/orbcomm.txt", False),
-            CatalogItem("Amateur Radio", "https://celestrak.com/NORAD/elements/amateur.txt", False)
+            CatalogItem("Orbcomm", "https://celestrak.com/NORAD/elements/orbcomm.txt", True),
+            CatalogItem("Amateur Radio", "https://celestrak.com/NORAD/elements/amateur.txt", True)
         ]
         self._selected_satellite = 'O3B FM12'
 
         self._observer_alt = 5
-        self._observer_lat = "43.538 N"
-        self._observer_lon = "6.955 E"
+        #self._observer_lat = "43.538 N"
+        #self._observer_lon = "6.955 E"
+        self._observer_lat = "43.5652 N"
+        self._observer_lon = "6.9676 E"
         self.observer_offset = 0  # in days
 
         self.track_method = 0  # 0 = GOTO, 1 = Move, 2 = Timed moves, 3 = Speed
@@ -75,22 +79,22 @@ class SatTrack(object):
         self.selected_satellite = self._selected_satellite
 
         self.tracking = False
-        self.offset_joystick_speed_dec = 0  # deg/s
-        self.offset_joystick_speed_ra = 0
-        self.offset_joystick_speed_FB = 0  # Front / Back
-        self.offset_joystick_speed_LR = 0  # Left / Right
-        self.offset_joystick_speed_time = 0  # s/s
-        self.offset_ui_speed_dec = 0  # deg/s
-        self.offset_ui_speed_ra = 0
-        self.offset_ui_speed_FB = 0  # Front / Back
-        self.offset_ui_speed_LR = 0  # Left / Right
-        self.offset_ui_speed_time = 0  # s/s
+        self.offset_joystick_speed_dec = 0.  # deg/s
+        self.offset_joystick_speed_ra = 0.
+        self.offset_joystick_speed_FB = 0.  # Front / Back
+        self.offset_joystick_speed_LR = 0.  # Left / Right
+        self.offset_joystick_speed_time = 0.  # s/s
+        self.offset_ui_speed_dec = 0.  # deg/s
+        self.offset_ui_speed_ra = 0.
+        self.offset_ui_speed_FB = 0.  # Front / Back
+        self.offset_ui_speed_LR = 0.  # Left / Right
+        self.offset_ui_speed_time = 0.  # s/s
         self.t_offset_integration = None
-        self.offset_dec = 0
-        self.offset_ra = 0
-        self.offset_FB = 0
-        self.offset_LR = 0
-        self.offset_time = 0
+        self.offset_dec = 0.
+        self.offset_ra = 0.
+        self.offset_FB = 0.
+        self.offset_LR = 0.
+        self.offset_time = 0.
 
     # Some properties to maintain to preserve internal consistency when attributes are updated and for error management
     @property
@@ -196,7 +200,7 @@ class SatTrack(object):
             raise Error("Unable to get the coordinates from the telescope")
 
     # noinspection PyProtectedMember
-    def radec2altaz(self, ra, dec, t=None):
+    def radec2altaz(self, ra: float, dec: float, t=None):
         """
         Convert ra,dec in alt,az
         :param ra: ra in rad
@@ -214,7 +218,7 @@ class SatTrack(object):
         az = arctan2(altaz[1], altaz[0])
         return alt, az
 
-    def radec2altaz_2(self, ra, dec, t=None):
+    def radec2altaz_2(self, ra: Angle, dec: Angle, t=None):
         """
         Convert ra,dec in alt,az
         :param ra: ra as skyfield Angle object
@@ -224,6 +228,45 @@ class SatTrack(object):
         """
         alt, az = self.radec2altaz(ra.radians, dec.radians, t)
         return Angle(radians=alt, preference="degrees"), Angle(radians=az, preference="degrees")
+
+    def altaz2radec(self, alt: float, az: float, t=None):
+        """
+        Convert alt,az in ra,dec
+        :param alt: alt in rad
+        :param az: az in rad
+        :param t: Skyfield Time object, use current time if omitted
+        :return: ra, dec in rad
+        """
+        if t is None:
+            t = self.t()
+
+        rot = self.obs._altaz_rotation(t)
+        cosalt = cos(alt)
+        altaz = [cosalt * cos(az), cosalt * sin(az), sin(alt)]
+        radec = einsum("ji,j->i", rot, altaz)
+
+        dec = arcsin(radec[2])
+        ra = arctan2(radec[1], radec[0])
+        ra = ra if ra >=0 else ra+2*pi
+
+        altaz_inv = einsum("ij,j->i", rot, radec)
+        cosdec = cos(dec)
+        radec = [cosdec * cos(ra), cosdec * sin(ra), sin(dec)]
+        altaz_2 = einsum("ij,j->i", rot, radec)
+        alt2 = arcsin(altaz_2[2])
+        az2 = arctan2(altaz_2[1], altaz_2[0])
+        return ra, dec
+
+    def altaz2radec_2(self, alt: Angle, az: Angle, t=None):
+        """
+        Convert alt,az in ra,dec
+        :param alt: alt as skyfield Angle object
+        :param az: az as skyfield Angle object
+        :param t: Skyfield Time object, use current time if omitted
+        :return: ra, dec as skyfield Angle object
+        """
+        ra, dec = self.altaz2radec(alt.radians, az.radians, t)
+        return Angle(radians=ra, preference="hours"), Angle(radians=dec, preference="degrees")
 
     def t(self):
         """ Current software time"""
@@ -264,13 +307,25 @@ class SatTrack(object):
         self.satellites_tle = dict()
         for catalog in self.catalogs:
             if catalog.active:
-                current_tle = load.tle(catalog.url)  # TODO: add error management
-                age = self.t() - current_tle[list(current_tle)[0]].epoch
-                self.log(2, 'TLE for ' + catalog.name + ' are {:.3f} days old'.format(age))
-                if abs(age) > max_age:
-                    self.log(1, 'Updating TLE'.format(age))
-                    current_tle = load.tle(catalog.url, reload=True)
+                try:
+                    current_tle = load.tle(catalog.url, filename=catalog.filename())  # try to get TLE from disk
+                    age = self.t() - current_tle[list(current_tle)[0]].epoch
+                    self.log(2, 'TLE for ' + catalog.name + ' are {:.3f} days old'.format(age))
+                    force_update = abs(age) > max_age
+                except OSError as err:
+                    self.log(1, "TLE file not found:\n" + str(err))
+                    force_update = True
+                    current_tle={}
+
+                if force_update:
+                    try:
+                        current_tle = load.tle(catalog.url, reload=True)
+                    except OSError as err:
+                        self.log(1, "Impossible to download TLE:\n" + str(err))
+
                 self.satellites_tle.update(current_tle)
+
+
 
         if self.ui is not None:
             self.ui.update_sat_list()
@@ -328,7 +383,7 @@ class SatTrack(object):
 
             if dt0 * direction > 86400 and alt1 < 0:
                 self.log(2, "no other pass for today")
-                return None, None, None, None, t0, None, None, None, None, None, None, None, None
+                return (None, None, None, None, t0), (None, None, None, None), (None, None, None, None)
 
             self.log(3,
                      "Phase 1: Maximum between dt0={0} and {1}".format(dt0 - step * direction, dt0 + step * direction))
@@ -348,14 +403,14 @@ class SatTrack(object):
                     continue  # restart the search for the following orbit
                 else:
                     self.log(2, "no pass found")
-                    return None, None, None, None, t0, None, None, None, None, None, None, None, None
+                    return (None, None, None, None, t0), (None, None, None, None), (None, None, None, None)
             else:
                 # Refining a 2nd time the maximum altitude to get the date
                 alt1 = alt_t(dt0 + smaller_step * direction)
                 while alt1 >= alt0:
                     if dt0 * direction > 86400:
                         self.log(3, "no culmination today")
-                        return None, None, None, None, t0, None, None, None, None, None, None, None, None
+                        return (None, None, None, None, t0), (None, None, None, None), (None, None, None, None)
                     self.log(3, "Phase 3: Increasing at dt0={0}, alt0={1}, alt1={2}".format(dt0, alt0, alt1))
                     alt0 = alt1
                     dt0 = dt0 + smaller_step * direction
@@ -634,7 +689,7 @@ class SatTrack(object):
 
         t = self.t()
         t_1 = self.t_offset_integration
-        dt = (t - t_1) * 86400
+        dt = (t - t_1) * 86400.
 
         self.offset_dec += dt * (self.offset_joystick_speed_dec + self.offset_ui_speed_dec)
         self.offset_ra += dt * (self.offset_joystick_speed_ra + self.offset_ui_speed_ra)
@@ -658,7 +713,7 @@ class SatTrack(object):
         target_speed_ra = target_ra_1._degrees - target_ra._degrees
         target_speed_dec = target_dec_1._degrees - target_dec._degrees
 
-        diff_ra = target_ra._degrees - current_ra * 15 + self.offset_ra
+        diff_ra = target_ra._degrees - current_ra * 15. + self.offset_ra
         diff_dec = target_dec._degrees - current_dec + self.offset_dec
 
         speed_ra = self.p_gain * diff_ra + target_speed_ra + self.offset_joystick_speed_ra
@@ -684,6 +739,11 @@ class SatTrack(object):
 
         self.integrate_offset()
 
+    def goto_altaz(self, alt: Angle, az: Angle):
+        ra,dec=self.altaz2radec_2(alt,az)
+        self.log(2,"Goto alt/az {0} / {1}, ra/dec {2} / {3}".format(str(alt),str(az),str(ra),str(dec)))
+        self.indiclient.goto(ra,dec)
+
 
 class CatalogItem(object):
     """ Satellite catalog item """
@@ -692,6 +752,9 @@ class CatalogItem(object):
         self.name = name
         self.url = url
         self.active = active
+
+    def filename(self):
+        return urlparse(self.url).path.split('/')[-1]
 
 
 class Error(Exception):

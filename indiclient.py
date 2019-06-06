@@ -5,6 +5,7 @@ Author: Romain Fafet (farom57@gmail.com)
 import time
 
 import PyIndi
+from skyfield.units import Angle
 
 
 class IndiClient(PyIndi.BaseClient):
@@ -210,6 +211,27 @@ class IndiClient(PyIndi.BaseClient):
         rate_prop[1].value = dec_speed
         self.sendNewNumber(rate_prop)
 
+    def goto(self, ra: Angle, dec: Angle):
+        """ goto to given coordinates"""
+
+        if not self.telescope_features["minimal"]:
+            raise Error("GOTO feature is not supported by {0}".format(self.telescope_name))
+
+        # TODO: set pier side
+        on_coord_prop = self.telescope.getSwitch("ON_COORD_SET")
+        assert on_coord_prop[0].name=="SLEW"
+        on_coord_prop[0].s = PyIndi.ISS_ON
+        on_coord_prop[1].s = PyIndi.ISS_OFF
+        on_coord_prop[2].s = PyIndi.ISS_OFF
+        self.sendNewSwitch(on_coord_prop) # TODO check if a delay is required
+
+        coord_prop = self.telescope.getNumber("EQUATORIAL_EOD_COORD")
+        assert coord_prop[0].name=="RA"
+        coord_prop[0].value = ra._hours
+        coord_prop[1].value = dec._degrees
+        self.sendNewNumber(coord_prop)
+
+        #TODO send signal when goto is finished
 
 class Error(Exception):
     pass
