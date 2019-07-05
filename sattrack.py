@@ -45,10 +45,15 @@ class SatTrack(object):
         self._selected_satellite = 'O3B FM12'
 
         self._observer_alt = 5
+        #TAS
         #self._observer_lat = "43.538 N"
         #self._observer_lon = "6.955 E"
-        self._observer_lat = "43.5652 N"
-        self._observer_lon = "6.9676 E"
+        #Le Cannet
+        #self._observer_lat = "43.5652 N"
+        #self._observer_lon = "6.9676 E"
+        #Calern
+        self._observer_lat = "43.7530 N"
+        self._observer_lon = "6.9219 E"
         self.observer_offset = 0  # in days
 
         self.track_method = 0  # 0 = GOTO, 1 = Move, 2 = Timed moves, 3 = Speed
@@ -715,8 +720,16 @@ class SatTrack(object):
 
         diff_ra = target_ra._degrees - current_ra * 15. + self.offset_ra
         diff_dec = target_dec._degrees - current_dec + self.offset_dec
+        if diff_ra > 180:
+            diff_ra -= 360
+        if diff_ra < -180:
+            diff_ra += 360
+        if diff_dec > 180:
+            diff_dec -= 360
+        if diff_dec < -180:
+            diff_dec += 360
 
-        speed_ra = self.p_gain * diff_ra + target_speed_ra + self.offset_joystick_speed_ra
+        speed_ra = self.p_gain * -diff_ra -target_speed_ra + self.offset_joystick_speed_ra + 360./86164.
         speed_dec = self.p_gain * diff_dec + target_speed_dec + self.offset_joystick_speed_dec
 
         self.log(3,

@@ -34,6 +34,7 @@ class IndiClient(PyIndi.BaseClient):
             "rate": False}
         self.joystick = None
         self.joystick_axes = None
+        self.waiting_goto_end = False
 
     def newDevice(self, d):
         self.st.log(2, "New device: " + d.getDeviceName())
@@ -74,6 +75,8 @@ class IndiClient(PyIndi.BaseClient):
     def newNumber(self, nvp):
         if nvp.device == self.telescope_name and nvp.name == "EQUATORIAL_EOD_COORD":
             self.st.update_tracking(nvp[0].value, nvp[1].value)
+            if self.waiting_goto_end and nvp.s==PyIndi.IPS_OK:
+                self.waiting_goto_end = False
         if nvp.device == "Joystick" and nvp.name == "JOYSTICK_AXES":
             self.st.update_joystick_offset(nvp)
 
@@ -105,7 +108,8 @@ class IndiClient(PyIndi.BaseClient):
             "TELESCOPE_MOTION_WE": None,
             "TELESCOPE_TIMED_GUIDE_dec": None,
             "TELESCOPE_TIMED_GUIDE_WE": None,
-            "TELESCOPE_CURRENT_RATE": None,
+            "TELESCOPE_TRACK_RATE": None,
+            "TELESCOPE_TRACK_MODE": None,
             "TELESCOPE_SLEW_RATE": None,
             "TELESCOPE_PIER_SIDE": None}
         self.telescope_features = {
@@ -173,7 +177,7 @@ class IndiClient(PyIndi.BaseClient):
             "minimal": {"CONNECTION", "EQUATORIAL_EOD_COORD", "ON_COORD_SET"},
             "move": {"TELESCOPE_MOTION_dec", "TELESCOPE_MOTION_WE"},
             "timed": {"TELESCOPE_TIMED_GUIDE_dec", "TELESCOPE_TIMED_GUIDE_WE"},
-            "speed": {"TELESCOPE_CURRENT_RATE"},
+            "speed": {"TELESCOPE_TRACK_RATE","TELESCOPE_TRACK_MODE"},
             "pier": {"TELESCOPE_PIER_SIDE"},
             "rate": {"TELESCOPE_SLEW_RATE"}}
         old = self.telescope_features
@@ -191,13 +195,22 @@ class IndiClient(PyIndi.BaseClient):
     def set_speed(self, ra_speed: float, dec_speed: float):
         """ send the command to change the speed of the telescope (in deg/s) """
 
-        if not self.telescope_features["speed"]:
-            raise Error("Variable motion rate not supported by {0}".format(self.telescope_name))
+        if not self.telescope_ready():
+            self.st.log(0, "Trying to command the speed while the telescope is not ready")
+            return
 
-        rate_prop = self.telescope.getNumber("TELESCOPE_CURRENT_RATE")
+        mode_prop = self.telescope.getSwitch("TELESCOPE_TRACK_MODE")
+        custom_switch = self.find_switch(mode_prop,"TRACK_CUSTOM")
+        if custom_switch.s!=PyIndi.ISS_ON:
+            custom_switch.s = PyIndi.ISS_ON
+            self.sendNewSwitch(mode_prop)
 
-        ra_speed = ra_speed / 360 * 86164.1
-        dec_speed = dec_speed / 360 * 86164.1
+        rate_prop = self.telescope.getNumber("TELESCOPE_TRACK_RATE")
+
+        # TELESCOPE_TRACK_RATE properties expect the values in arcsec/s
+        ra_speed = ra_speed * 3600.
+        dec_speed = dec_speed * 3600
+
         if ra_speed > rate_prop[0].max:
             ra_speed = rate_prop[0].max
         if dec_speed > rate_prop[1].max:
@@ -214,8 +227,9 @@ class IndiClient(PyIndi.BaseClient):
     def goto(self, ra: Angle, dec: Angle):
         """ goto to given coordinates"""
 
-        if not self.telescope_features["minimal"]:
-            raise Error("GOTO feature is not supported by {0}".format(self.telescope_name))
+        if not self.telescope_ready():
+            self.st.log(0, "Trying to goto the speed while the telescope is not ready")
+            return
 
         # TODO: set pier side
         on_coord_prop = self.telescope.getSwitch("ON_COORD_SET")
@@ -231,7 +245,24 @@ class IndiClient(PyIndi.BaseClient):
         coord_prop[1].value = dec._degrees
         self.sendNewNumber(coord_prop)
 
-        #TODO send signal when goto is finished
+        self.waiting_goto_end = True
+
+    def telescope_ready(self):
+        if self.telescope_name is None or \
+                self.telescope is None or \
+                self.telescope_features["minimal"]==False or \
+                self.telescope_features["speed"]==False or \
+                self.waiting_goto_end:
+            return False
+
+        return True
+
+    def find_switch(self, prop: PyIndi.ISwitchVectorProperty, name):
+        for switch in prop:
+            if switch.name == name:
+                return switch
+
+        return None
 
 class Error(Exception):
     pass
