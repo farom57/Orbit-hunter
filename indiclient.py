@@ -34,6 +34,8 @@ class IndiClient(PyIndi.BaseClient):
             "rate": False}
         self.joystick = None
         self.joystick_axes = None
+        self.max_allowed_speed_ra = 0.0
+        self.max_allowed_speed_de = 0.0
 
     def newDevice(self, d):
         self.st.log(2, "New device: " + d.getDeviceName())
@@ -152,10 +154,7 @@ class IndiClient(PyIndi.BaseClient):
         # - Other: TELESCOPE_SLEW_RATE, TELESCOPE_PIER_SIDE
 
         t = 0
-        while not (self.telescope_features["minimal"] &
-                   (self.telescope_features["move"] or
-                    self.telescope_features["timed"] or
-                    self.telescope_features["speed"])):
+        while not (self.telescope_features["minimal"] & self.telescope_features["speed"]):
             if t > self.st.connection_timeout:
                 self.st.log(0,
                             "Error during driver connection: No control method available, Is \"" + device_name +
@@ -185,8 +184,13 @@ class IndiClient(PyIndi.BaseClient):
                     satisfied = False
             self.telescope_features[feat] = satisfied
 
-        if not (old == self.telescope_features) & (self.st.ui is not None):
-            self.st.ui.update_telescope_features(self.telescope_features)
+        if self.telescope_features["speed"]:
+            rate_prop = self.telescope.getNumber("TELESCOPE_CURRENT_RATE")
+            self.max_allowed_speed_ra = rate_prop[0].max / 3600.
+            self.max_allowed_speed_de = rate_prop[1].max / 3600.
+
+        if self.st.ui is not None:
+            self.st.ui.update_telescope_speed(self.max_allowed_speed_ra, self.max_allowed_speed_de)
 
     def set_speed(self, ra_speed: float, dec_speed: float):
         """ send the command to change the speed of the telescope (in deg/s) """

@@ -54,7 +54,8 @@ class SatTrack(object):
         self.track_method = 0  # 0 = GOTO, 1 = Move, 2 = Timed moves, 3 = Speed
 
         self.p_gain = 0.5
-        self.max_speed = 1.  # deg/s
+        self.max_speed_ra = 1.  # deg/s
+        self.max_speed_de = 1.  # deg/s
         self.joystick_speed = 1.  # deg/s
         self.i_sat = 0.5
 
@@ -608,10 +609,11 @@ class SatTrack(object):
             self.ui.tracking_started()
 
     def stop_tracking(self):
-        self.tracking = False
-        self.indiclient.set_speed(0, 0)
-        if self.ui is not None:
-            self.ui.tracking_stopped()
+        if self.tracking:
+            self.tracking = False
+            self.indiclient.set_speed(0, 0)
+            if self.ui is not None:
+                self.ui.tracking_stopped()
 
     def update_joystick_offset(self, nvp):
         # this procedure is called by indiclient each time the joystick input are updated.
@@ -726,14 +728,21 @@ class SatTrack(object):
                      Angle(degrees=diff_ra), Angle(degrees=diff_dec), target_speed_ra, target_speed_dec, speed_ra,
                      speed_dec, self.offset_ra, self.offset_dec, self.offset_joystick_speed_ra, self.offset_joystick_speed_dec))
 
-        if speed_ra > self.max_speed:
-            speed_ra = self.max_speed
-        if speed_dec > self.max_speed:
-            speed_dec = self.max_speed
-        if speed_ra < -self.max_speed:
-            speed_ra = -self.max_speed
-        if speed_dec < -self.max_speed:
-            speed_dec = -self.max_speed
+        # Clip to max speed
+        if speed_ra > abs(self.max_speed_ra):
+            speed_ra = abs(self.max_speed_ra)
+        if speed_dec > abs(self.max_speed_de):
+            speed_dec = abs(self.max_speed_de)
+        if speed_ra < -abs(self.max_speed_ra):
+            speed_ra = -abs(self.max_speed_ra)
+        if speed_dec < -abs(self.max_speed_de):
+            speed_dec = -abs(self.max_speed_de)
+
+        # inverse direction if negative max speed
+        if self.max_speed_ra < 0:
+            speed_ra = -speed_ra
+        if self.max_speed_de < 0:
+            speed_dec = -speed_dec
 
         self.indiclient.set_speed(speed_ra, speed_dec)
 
