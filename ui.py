@@ -34,7 +34,8 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.port_edit.setValue(self.st.indi_port)
         self.indi_lbl.setText("Not connected")
         self.p_gain_spinbox.setValue(self.st.p_gain)
-        self.max_speed_spinbox.setValue(self.st.max_speed)
+        self.max_speed_RA_spinbox.setValue(self.st.max_speed_ra)
+        self.max_speed_DE_spinbox.setValue(self.st.max_speed_de)
         self.update_speed()
         self.latitude_edit.setText(self.st.observer_lat)
         self.longitude_edit.setText(self.st.observer_lon)
@@ -54,7 +55,8 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         self.telescope_combobox.currentIndexChanged['QString'].connect(self.telescope_changed)
 
         self.p_gain_spinbox.valueChanged['double'].connect(self.trackparam_changed)
-        self.max_speed_spinbox.valueChanged['double'].connect(self.trackparam_changed)
+        self.max_speed_RA_spinbox.valueChanged['double'].connect(self.trackparam_changed)
+        self.max_speed_DE_spinbox.valueChanged['double'].connect(self.trackparam_changed)
         self.joystick_speed_spinbox.valueChanged['double'].connect(self.trackparam_changed)
         self.joystick_btn.clicked.connect(self.joystickconfig_clicked)
 
@@ -165,7 +167,7 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         # TODO: wait & start tracking
 
     def faster_clicked(self):
-        self.st.joystick_speed = min(self.joystick_speed_spinbox.value() * 2, self.max_speed_spinbox.value())
+        self.st.joystick_speed = min(self.joystick_speed_spinbox.value() * 2, self.max_speed_spinbox_RA.value())
         self.update_speed()
 
     def slower_clicked(self):
@@ -245,7 +247,8 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
             self.location_lbl.setText("Invalid location:\n" + err.args[0])
 
     def trackparam_changed(self, dummy):
-        self.st.max_speed = self.max_speed_spinbox.value()
+        self.st.max_speed_ra = self.max_speed_RA_spinbox.value()
+        self.st.max_speed_de = self.max_speed_DE_spinbox.value()
         self.st.joystick_speed = self.joystick_speed_spinbox.value()
         self.st.p_gain = self.p_gain_spinbox.value()
 
@@ -364,6 +367,10 @@ class UI(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             self.set_time_lbl.setText("-")
             self.set_az_lbl.setText("-")
+
+    def update_telescope_speed(self,ra, de):
+        self.max_speed_RA_spinbox.setValue(ra)
+        self.max_speed_DE_spinbox.setValue(de)
 
     # Update information panel every second time, sat location telescope location...)
     def timerEvent(self, event):
